@@ -1,0 +1,26 @@
+{
+  "name": "red-project",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "migrate": "pnpm --filter @repo/db drizzle-kit generate && pnpm --filter @repo/db drizzle-kit migrate"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "concurrently": "^8.2.2",
+    "dotenv": "^16.4.5",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^15.0.0",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.2",
+    "prettier": "^3.2.5",
+    "turbo": "^2.1.1",
+    "typescript": "^5.4.5"
+  }
+}

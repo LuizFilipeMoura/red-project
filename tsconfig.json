@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@repo/shared": ["packages/shared/src/index.ts"],
+      "@repo/shared/*": ["packages/shared/src/*"],
+      "@repo/db": ["packages/db/src/index.ts"],
+      "@repo/db/*": ["packages/db/src/*"]
+    }
+  },
+  "include": ["packages", "apps"],
+  "exclude": ["node_modules", "dist"]
+}
