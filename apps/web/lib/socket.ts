@@ -1,0 +1,112 @@
+'use client';
+
+import { io, type Socket } from 'socket.io-client';
+import { z } from 'zod';
+import {
+  EVENTS,
+  makeMsg,
+  schemas,
+  type Lobby,
+  type LobbyListPayload,
+  type ErrorPayload,
+  type StateSync,
+} from '@repo/shared';
+
+const SOCKET_URL = `${process.env.NEXT_PUBLIC_SOCKET_URL ?? 'http://localhost:4000'}/game`;
+
+type EventKey = keyof typeof schemas;
+type EventValue = (typeof EVENTS)[keyof typeof EVENTS];
+
+const isEventKey = (value: string): value is EventKey => value in schemas;
+
+class SocketManager {
+  private socket?: Socket;
+  private handlers: Partial<Record<EventKey, Set<(payload: any) => void>>> = {};
+
+  private ensureSocket() {
+    if (this.socket || typeof window === 'undefined') {
+      return this.socket;
+    }
+    this.socket = io(SOCKET_URL, {
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+    });
+    this.socket.onAny((event, message) => {
+      if (!isEventKey(event)) return;
+      try {
+        const schema = schemas[event];
+        const payload = this.parseMessage(event, message, schema);
+        this.handlers[event]?.forEach((handler) => handler(payload));
+      } catch (error) {
+        console.error('Socket payload parse failed', event, error);
+      }
+    });
+    return this.socket;
+  }
+
+  private parseMessage<T>(event: EventKey, message: unknown, schema: z.ZodType<T>): T {
+    if (message && typeof message === 'object' && 'payload' in (message as any)) {
+      const typed = message as { version: string; type: string; payload: unknown };
+      if (typed.type !== event) {
+        throw new Error(`Unexpected type ${typed.type}`);
+      }
+      return schema.parse(typed.payload);
+    }
+    return schema.parse(message);
+  }
+
+  emit<T>(event: EventValue, payload: unknown) {
+    const socket = this.ensureSocket();
+    if (!socket) return;
+    if (!isEventKey(event)) {
+      throw new Error(`Unknown event ${event}`);
+    }
+    const data = schemas[event].parse(payload);
+    socket.emit(event, makeMsg(event, data as never));
+  }
+
+  on<T>(event: EventValue, handler: (payload: T) => void) {
+    if (!isEventKey(event)) return () => undefined;
+    this.ensureSocket();
+    if (!this.handlers[event]) {
+      this.handlers[event] = new Set();
+    }
+    const set = this.handlers[event]!;
+    set.add(handler as any);
+    return () => {
+      set.delete(handler as any);
+    };
+  }
+}
+
+export const socketClient = new SocketManager();
+
+export type LobbyListHandler = (payload: LobbyListPayload) => void;
+export type StateSyncHandler = (payload: StateSync) => void;
+export type ErrorHandler = (payload: ErrorPayload) => void;
+
+export function requestLobbyList(page = 1, pageSize = 10) {
+  socketClient.emit(EVENTS.LIST, { page, pageSize });
+}
+
+export function createLobby(data: { name: string; password?: string }) {
+  socketClient.emit(EVENTS.CREATE, data);
+}
+
+export function joinLobby(lobbyId: string, password?: string) {
+  socketClient.emit(EVENTS.JOIN, { lobbyId, password });
+}
+
+export function leaveLobby(lobbyId: string) {
+  socketClient.emit(EVENTS.LEAVE, { lobbyId });
+}
+
+export function startLobby(lobbyId: string) {
+  socketClient.emit(EVENTS.START, { lobbyId });
+}
+
+export function passTurn(lobbyId: string) {
+  socketClient.emit(EVENTS.TURN_PASS, { lobbyId });
+}
+
+export type LobbyState = Lobby;
