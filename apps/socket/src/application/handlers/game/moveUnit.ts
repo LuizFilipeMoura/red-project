@@ -1,4 +1,4 @@
-import { EVENTS, MOVE_RANGE, schemas, FLAG_A, FLAG_B } from '@repo/shared';
+import { EVENTS, MOVE_RANGE, schemas } from '@repo/shared';
 import type { z } from 'zod';
 import type { EventHandler, HandlerContext } from '../../types.js';
 import { ApplicationError } from '../../errors.js';
@@ -7,6 +7,7 @@ import {
   isCellOccupied,
   isOnBoard,
   manhattanDistance,
+  getFlagCaptureWinner,
 } from '../../../game/rules.js';
 import type { LobbyState } from '../../../state.js';
 
@@ -20,7 +21,6 @@ type MoveUnitContextData = {
   lobby: LobbyState;
   unit: ActiveMatch['units'][number];
   target: { x: number; y: number };
-  targetFlag: typeof FLAG_A;
   release: () => void;
 };
 
@@ -90,17 +90,13 @@ export const preProcessMoveUnit = async (context: HandlerContext, input: MoveUni
       throw new ApplicationError('MOVE_TOO_FAR', 'Destination is out of range');
     }
 
-    const side = getPlayerSide(lobby, context.sid);
-    if (!side) {
+    if (!getPlayerSide(lobby, context.sid)) {
       throw new ApplicationError('INVALID_STATE', 'Unable to determine player side');
     }
-    const targetFlag = side === 'A' ? FLAG_B : FLAG_A;
-
     setMoveUnitContext(context, {
       lobby,
       unit,
       target: { x: input.toX, y: input.toY },
-      targetFlag,
       release,
     });
   } catch (error) {
@@ -110,14 +106,16 @@ export const preProcessMoveUnit = async (context: HandlerContext, input: MoveUni
 };
 
 export const handleMoveUnit: EventHandler<MoveUnitInput> = async (context, input) => {
-  const { lobby, unit, target, targetFlag, release } = getMoveUnitContext(context);
+  const { lobby, unit, target, release } = getMoveUnitContext(context);
   const match = lobby.match!;
   try {
     unit.x = target.x;
     unit.y = target.y;
+    unit.canMoveAtTurn = match.turnNumber + 1;
 
-    if (unit.x === targetFlag.x && unit.y === targetFlag.y) {
-      match.winnerSid = context.sid;
+    const winnerSid = getFlagCaptureWinner(lobby, match);
+    if (winnerSid) {
+      match.winnerSid = winnerSid;
       lobby.meta.status = 'finished';
     }
 

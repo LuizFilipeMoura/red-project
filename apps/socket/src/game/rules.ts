@@ -33,3 +33,21 @@ export const getMoveRange = (type: keyof typeof MOVE_RANGE) => MOVE_RANGE[type];
 
 export const isFlagCell = (x: number, y: number) =>
   (x === FLAG_A.x && y === FLAG_A.y) || (x === FLAG_B.x && y === FLAG_B.y);
+
+export const getFlagCaptureWinner = (lobby: LobbyState, match: MatchState): string | null => {
+  const order = getPlayerOrder(lobby);
+  if (!order) return null;
+  const [playerA, playerB] = order;
+
+  const unitOnFlagA = match.units.find((unit) => unit.x === FLAG_A.x && unit.y === FLAG_A.y);
+  if (unitOnFlagA && unitOnFlagA.owner !== playerA) {
+    return unitOnFlagA.owner;
+  }
+
+  const unitOnFlagB = match.units.find((unit) => unit.x === FLAG_B.x && unit.y === FLAG_B.y);
+  if (unitOnFlagB && unitOnFlagB.owner !== playerB) {
+    return unitOnFlagB.owner;
+  }
+
+  return null;
+};

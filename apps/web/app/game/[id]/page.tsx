@@ -8,6 +8,8 @@ import {
   BOARD_H,
   BOARD_W,
   EVENTS,
+  FLAG_A,
+  FLAG_B,
   MANA_PER_TURN,
   MOVE_RANGE,
   SIDE_ROWS,
@@ -30,6 +32,13 @@ type Mode =
   | { kind: 'move'; unitId: string };
 
 type Highlight = { x: number; y: number; color: number };
+
+const DEFAULT_BOARD: MatchState['board'] = {
+  width: BOARD_W,
+  height: BOARD_H,
+  flagA: FLAG_A,
+  flagB: FLAG_B,
+};
 
 type TileCoords = { x: number; y: number };
 
@@ -199,20 +208,65 @@ export default function GamePage() {
 
       class BoardScene extends Scene {
         private tileSize = 54;
+        private boardOffsetX = 0;
+        private boardOffsetY = 0;
         private unitTexts = new Map<string, PhaserType.GameObjects.Text>();
         private highlightGraphics!: PhaserType.GameObjects.Graphics;
+        private flagMarkers: Array<{
+          circle: PhaserType.GameObjects.Arc;
+          label: PhaserType.GameObjects.Text;
+        }> = [];
+
+        private tileCenter(x: number, y: number) {
+          return {
+            x: this.boardOffsetX + x * this.tileSize + this.tileSize / 2,
+            y: this.boardOffsetY + y * this.tileSize + this.tileSize / 2,
+          };
+        }
+
+        private updateFlagMarkers(board: MatchState['board']) {
+          const configs = [
+            { coords: board.flagA, color: 0xfacc15, label: 'A' },
+            { coords: board.flagB, color: 0xf43f5e, label: 'B' },
+          ] as const;
+          configs.forEach((config, index) => {
+            const center = this.tileCenter(config.coords.x, config.coords.y);
+            const marker = this.flagMarkers[index];
+            if (!marker) {
+              const circle = this.add
+                .circle(center.x, center.y, this.tileSize * 0.32, config.color, 0.85)
+                .setStrokeStyle(2, 0xf8fafc, 0.9)
+                .setDepth(1);
+              const label = this.add
+                .text(center.x, center.y, config.label, {
+                  color: '#020617',
+                  fontSize: '16px',
+                  fontFamily: 'monospace',
+                  fontStyle: 'bold',
+                })
+                .setOrigin(0.5, 0.6)
+                .setDepth(2);
+              this.flagMarkers[index] = { circle, label };
+            } else {
+              marker.circle.setPosition(center.x, center.y);
+              marker.circle.setFillStyle(config.color, 0.85);
+              marker.label.setPosition(center.x, center.y);
+              marker.label.setText(config.label);
+            }
+          });
+        }
 
         create() {
           const boardSize = this.tileSize * BOARD_W;
-          const offsetX = (this.cameras.main.width - boardSize) / 2;
-          const offsetY = (this.cameras.main.height - boardSize) / 2;
+          this.boardOffsetX = (this.cameras.main.width - boardSize) / 2;
+          this.boardOffsetY = (this.cameras.main.height - boardSize) / 2;
           this.highlightGraphics = this.add.graphics();
           for (let y = 0; y < BOARD_H; y += 1) {
             for (let x = 0; x < BOARD_W; x += 1) {
               const rect = this.add
                 .rectangle(
-                  offsetX + x * this.tileSize + this.tileSize / 2,
-                  offsetY + y * this.tileSize + this.tileSize / 2,
+                  this.boardOffsetX + x * this.tileSize + this.tileSize / 2,
+                  this.boardOffsetY + y * this.tileSize + this.tileSize / 2,
                   this.tileSize - 2,
                   this.tileSize - 2,
                   (x + y) % 2 === 0 ? 0x0f172a : 0x172554,
@@ -224,6 +278,7 @@ export default function GamePage() {
               });
             }
           }
+          this.updateFlagMarkers(DEFAULT_BOARD);
           resolveScene(this as SceneApi);
         }
 
@@ -236,15 +291,17 @@ export default function GamePage() {
 
         renderMatch(match: MatchState | null) {
           this.clearUnits();
-          if (!match) return;
-          const boardSize = this.tileSize * BOARD_W;
-          const offsetX = (this.cameras.main.width - boardSize) / 2;
-          const offsetY = (this.cameras.main.height - boardSize) / 2;
+          if (!match) {
+            this.updateFlagMarkers(DEFAULT_BOARD);
+            return;
+          }
+          this.updateFlagMarkers(match.board);
           for (const unit of match.units) {
+            const center = this.tileCenter(unit.x, unit.y);
             const text = this.add
               .text(
-                offsetX + unit.x * this.tileSize + this.tileSize / 2,
-                offsetY + unit.y * this.tileSize + this.tileSize / 2,
+                center.x,
+                center.y,
                 unit.type,
                 {
                   color: '#f8fafc',
@@ -265,21 +322,18 @@ export default function GamePage() {
         setHighlights(cells: Highlight[]) {
           this.highlightGraphics.clear();
           if (!cells.length) return;
-          const boardSize = this.tileSize * BOARD_W;
-          const offsetX = (this.cameras.main.width - boardSize) / 2;
-          const offsetY = (this.cameras.main.height - boardSize) / 2;
           for (const cell of cells) {
             this.highlightGraphics.fillStyle(cell.color, 0.25);
             this.highlightGraphics.fillRect(
-              offsetX + cell.x * this.tileSize,
-              offsetY + cell.y * this.tileSize,
+              this.boardOffsetX + cell.x * this.tileSize,
+              this.boardOffsetY + cell.y * this.tileSize,
               this.tileSize,
               this.tileSize,
             );
             this.highlightGraphics.lineStyle(2, cell.color, 0.8);
             this.highlightGraphics.strokeRect(
-              offsetX + cell.x * this.tileSize,
-              offsetY + cell.y * this.tileSize,
+              this.boardOffsetX + cell.x * this.tileSize,
+              this.boardOffsetY + cell.y * this.tileSize,
               this.tileSize,
               this.tileSize,
             );
