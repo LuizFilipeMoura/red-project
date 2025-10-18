@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import { ApplicationError } from '../errors.js';
 import type { EventHandler } from '../types.js';
 import { initializeMatchState } from '../../state.js';
+import { createInitialDecks, startTurnForPlayer } from '../../game/cards.js';
 
 const schema = schemas[EVENTS.START];
 
@@ -26,7 +27,14 @@ export const handleStartLobby: EventHandler<StartLobbyInput> = async (context, i
     if (!lobby.match && lobby.players.length === LOBBY_CAPACITY) {
       const first = lobby.currentPlayerSid ?? lobby.players[0]!.sid;
       const second = lobby.players.find((player) => player.sid !== first)?.sid ?? lobby.players[0]!.sid;
+      const { cards, decks } = createInitialDecks([first, second]);
       lobby.match = initializeMatchState(lobby, [first, second]);
+      lobby.match.cards = cards;
+      lobby.match.decks = decks;
+      lobby.match.talentsInHand = { [first]: [], [second]: [] };
+      lobby.match.mana[first] = 0;
+      lobby.match.mana[second] = 0;
+      startTurnForPlayer(lobby.match, first);
       lobby.turnNumber = lobby.match.turnNumber;
       lobby.currentPlayerSid = lobby.match.currentPlayerSid;
     }

@@ -24,6 +24,7 @@ model Lobby {
   match   Match?  @relation("LobbyMatch")
 
   @@map("lobbies")
+  @@index([status, createdAt], map: "idx_lobby_status_created")
 }
 
 model Player {
@@ -36,6 +37,7 @@ model Player {
   lobby Lobby @relation(fields: [lobbyId], references: [id], onDelete: Cascade)
 
   @@map("players")
+  @@unique([lobbyId, sid], map: "uniq_player_per_lobby")
 }
 
 model Match {
@@ -43,6 +45,9 @@ model Match {
   currentPlayerSid String   @map("current_player_sid")
   turnNumber       Int      @map("turn_number")
   stateJson        String   @map("state_json")
+  decksJson        String   @default("{}") @map("decks_json")
+  cardsJson        String   @default("{}") @map("cards_json")
+  talentsJson      String   @default("{}") @map("talents_json")
   updatedAt        DateTime @default(now()) @map("updated_at")
 
   lobby   Lobby   @relation("LobbyMatch", fields: [id], references: [id], onDelete: Cascade)
@@ -60,10 +65,13 @@ model Unit {
   x             Int
   y             Int
   canMoveAtTurn Int    @map("can_move_at_turn")
+  hp            Int    @default(1)
+  hpMax         Int    @default(1) @map("hp_max")
 
   match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
   @@map("units")
+  @@unique([matchId, x, y], map: "uniq_unit_cell")
 }
 
 model ActionLog {

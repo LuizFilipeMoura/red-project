@@ -7,11 +7,13 @@ import {
   FLAG_B,
   LOBBY_CAPACITY,
   MAX_LOBBY_NAME_LENGTH,
-  MOVE_RANGE,
   MANA_PER_TURN,
+  MOVE_RANGE,
   SIDE_ROWS,
+  TALENT_RANGE,
   TURN_TIMEOUT_MS,
   UNIT_COST,
+  UNIT_HP,
   UNIT_TYPES,
 } from './constants.js';
 
@@ -49,6 +51,67 @@ export const lobbySchema = z.object({
 });
 
 export const unitTypeSchema = z.enum(UNIT_TYPES);
+
+export const areaShapeSchema = z.union([
+  z.literal('cell'),
+  z.literal('row'),
+  z.literal('col'),
+  z.object({ shape: z.literal('square2x2') }),
+  z.object({ shape: z.literal('diag'), length: z.number().int().min(1) }),
+]);
+
+export const spellEffectSchema = z.object({
+  type: z.enum(['damage', 'heal', 'maxHpUp']),
+  amount: z.number().int().min(0),
+  friendlyFire: z.boolean().default(false),
+});
+
+export const cardUnitSchema = z.object({
+  id: z.string(),
+  kind: z.literal('Unit'),
+  unitType: unitTypeSchema,
+  cost: z.number().int().nonnegative(),
+  hpBase: z.number().int().min(1),
+});
+
+export const cardSpellSchema = z.object({
+  id: z.string(),
+  kind: z.literal('Spell'),
+  name: z.string().min(1),
+  cost: z.number().int().nonnegative(),
+  area: areaShapeSchema,
+  text: z.string().min(1),
+  effects: z.array(spellEffectSchema).min(1),
+});
+
+export const cardTalentSchema = z.object({
+  id: z.string(),
+  kind: z.literal('Talent'),
+  sourceUnitId: z.string(),
+  unitType: unitTypeSchema,
+  cost: z.literal(1),
+  range: z.number().int().min(0),
+  text: z.string().min(1),
+  effect: z.object({
+    type: z.enum(['damage', 'heal']),
+    amount: z.number().int().min(0),
+  }),
+  expiresAtTurn: z.number().int().min(1),
+});
+
+export const cardSchema = z.discriminatedUnion('kind', [
+  cardUnitSchema,
+  cardSpellSchema,
+  cardTalentSchema,
+]);
+
+export const deckStateSchema = z.object({
+  deck: z.array(z.string()),
+  hand: z.array(z.string()),
+  discard: z.array(z.string()),
+  graveyard: z.array(z.string()),
+});
+
 export const unitSchema = z.object({
   id: z.string(),
   type: unitTypeSchema,
@@ -56,6 +119,8 @@ export const unitSchema = z.object({
   x: z.number().int().min(0).max(BOARD_W - 1),
   y: z.number().int().min(0).max(BOARD_H - 1),
   canMoveAtTurn: z.number().int().min(1),
+  hp: z.number().int().min(0),
+  hpMax: z.number().int().min(1),
 });
 
 export const boardSchema = z.object({
@@ -72,6 +137,9 @@ export const matchStateSchema = z.object({
   currentPlayerSid: sidSchema,
   turnNumber: z.number().int().min(1),
   mana: z.record(sidSchema, z.number().int().min(0)),
+  decks: z.record(sidSchema, deckStateSchema),
+  cards: z.record(z.string(), cardSchema),
+  talentsInHand: z.record(sidSchema, z.array(z.string())),
   winnerSid: sidSchema.optional().nullable(),
 });
 
@@ -87,23 +155,18 @@ export const errorSchema = z.object({
 });
 
 export const lobbyListResponseSchema = z.object({
-  items: z.array(lobbySchema.pick({
-    id: true,
-    name: true,
-    isPrivate: true,
-    players: true,
-    capacity: true,
-    status: true,
-  })),
+  items: z.array(
+    lobbySchema.pick({
+      id: true,
+      name: true,
+      isPrivate: true,
+      players: true,
+      capacity: true,
+      status: true,
+    }),
+  ),
   page: z.number().int().min(1),
   total: z.number().int().nonnegative(),
-});
-
-export const placeUnitSchema = z.object({
-  lobbyId: lobbyIdSchema,
-  type: unitTypeSchema,
-  x: z.number().int().min(0).max(BOARD_W - 1),
-  y: z.number().int().min(0).max(BOARD_H - 1),
 });
 
 export const moveUnitSchema = z.object({
@@ -117,7 +180,27 @@ export const endTurnSchema = z.object({
   lobbyId: lobbyIdSchema,
 });
 
-// Request schemas (for client -> server)
+export const playUnitCardSchema = z.object({
+  lobbyId: lobbyIdSchema,
+  cardId: z.string(),
+  x: z.number().int().min(0).max(BOARD_W - 1),
+  y: z.number().int().min(0).max(BOARD_H - 1),
+});
+
+export const playSpellCardSchema = z.object({
+  lobbyId: lobbyIdSchema,
+  cardId: z.string(),
+  anchorX: z.number().int().min(0).max(BOARD_W - 1),
+  anchorY: z.number().int().min(0).max(BOARD_H - 1),
+});
+
+export const playTalentCardSchema = z.object({
+  lobbyId: lobbyIdSchema,
+  cardId: z.string(),
+  targetX: z.number().int().min(0).max(BOARD_W - 1),
+  targetY: z.number().int().min(0).max(BOARD_H - 1),
+});
+
 export const requestSchemas = {
   'lobby:create': z.object({
     name: lobbyNameSchema,
@@ -138,12 +221,13 @@ export const requestSchemas = {
   'turn:pass': z.object({
     lobbyId: lobbyIdSchema,
   }),
-  [EVENTS.GAME_PLACE_UNIT]: placeUnitSchema,
   [EVENTS.GAME_MOVE_UNIT]: moveUnitSchema,
   [EVENTS.GAME_END_TURN]: endTurnSchema,
+  [EVENTS.CARD_PLAY_UNIT]: playUnitCardSchema,
+  [EVENTS.CARD_PLAY_SPELL]: playSpellCardSchema,
+  [EVENTS.CARD_PLAY_TALENT]: playTalentCardSchema,
 } satisfies Record<string, z.ZodTypeAny>;
 
-// Response schemas (for server -> client)
 export const schemas = {
   'lobby:create': z.object({
     name: lobbyNameSchema,
@@ -166,9 +250,11 @@ export const schemas = {
   }),
   'state:sync': stateSyncSchema,
   error: errorSchema,
-  [EVENTS.GAME_PLACE_UNIT]: placeUnitSchema,
   [EVENTS.GAME_MOVE_UNIT]: moveUnitSchema,
   [EVENTS.GAME_END_TURN]: endTurnSchema,
+  [EVENTS.CARD_PLAY_UNIT]: playUnitCardSchema,
+  [EVENTS.CARD_PLAY_SPELL]: playSpellCardSchema,
+  [EVENTS.CARD_PLAY_TALENT]: playTalentCardSchema,
 } satisfies Record<string, z.ZodTypeAny>;
 
 export type Lobby = z.infer<typeof lobbySchema>;
@@ -178,9 +264,17 @@ export type ErrorPayload = z.infer<typeof errorSchema>;
 export type LobbyListPayload = z.infer<typeof lobbyListResponseSchema>;
 export type Unit = z.infer<typeof unitSchema>;
 export type MatchState = z.infer<typeof matchStateSchema>;
-export type PlaceUnitPayload = z.infer<typeof placeUnitSchema>;
 export type MoveUnitPayload = z.infer<typeof moveUnitSchema>;
 export type EndTurnPayload = z.infer<typeof endTurnSchema>;
+export type PlayUnitCardPayload = z.infer<typeof playUnitCardSchema>;
+export type PlaySpellCardPayload = z.infer<typeof playSpellCardSchema>;
+export type PlayTalentCardPayload = z.infer<typeof playTalentCardSchema>;
+export type Card_Unit = z.infer<typeof cardUnitSchema>;
+export type Card_Spell = z.infer<typeof cardSpellSchema>;
+export type Card_Talent = z.infer<typeof cardTalentSchema>;
+export type SpellEffect = z.infer<typeof spellEffectSchema>;
+export type AreaShape = z.infer<typeof areaShapeSchema>;
+export type DeckState = z.infer<typeof deckStateSchema>;
 
 export const turnStateSchema = z.object({
   lobbyId: lobbyIdSchema,
@@ -193,7 +287,28 @@ export const turnStateSchema = z.object({
 export const matchConfigSchema = z.object({
   board: boardSchema,
   manaPerTurn: z.literal(MANA_PER_TURN),
-  unitCost: z.object({ Mage: z.literal(UNIT_COST.Mage), Warrior: z.literal(UNIT_COST.Warrior), Archer: z.literal(UNIT_COST.Archer) }),
-  moveRange: z.object({ Mage: z.literal(MOVE_RANGE.Mage), Warrior: z.literal(MOVE_RANGE.Warrior), Archer: z.literal(MOVE_RANGE.Archer) }),
-  sides: z.object({ A: z.object({ min: z.literal(SIDE_ROWS.A.min), max: z.literal(SIDE_ROWS.A.max) }), B: z.object({ min: z.literal(SIDE_ROWS.B.min), max: z.literal(SIDE_ROWS.B.max) }) }),
+  unitCost: z.object({
+    Mage: z.literal(UNIT_COST.Mage),
+    Warrior: z.literal(UNIT_COST.Warrior),
+    Archer: z.literal(UNIT_COST.Archer),
+  }),
+  unitHp: z.object({
+    Mage: z.literal(UNIT_HP.Mage),
+    Warrior: z.literal(UNIT_HP.Warrior),
+    Archer: z.literal(UNIT_HP.Archer),
+  }),
+  moveRange: z.object({
+    Mage: z.literal(MOVE_RANGE.Mage),
+    Warrior: z.literal(MOVE_RANGE.Warrior),
+    Archer: z.literal(MOVE_RANGE.Archer),
+  }),
+  talentRange: z.object({
+    Mage: z.literal(TALENT_RANGE.Mage),
+    Warrior: z.literal(TALENT_RANGE.Warrior),
+    Archer: z.literal(TALENT_RANGE.Archer),
+  }),
+  sides: z.object({
+    A: z.object({ min: z.literal(SIDE_ROWS.A.min), max: z.literal(SIDE_ROWS.A.max) }),
+    B: z.object({ min: z.literal(SIDE_ROWS.B.min), max: z.literal(SIDE_ROWS.B.max) }),
+  }),
 });

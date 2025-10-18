@@ -3,7 +3,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import type { EndTurnPayload, ErrorPayload, Lobby, MatchState, PlaceUnitPayload } from '@repo/shared';
+import type {
+  Card_Spell,
+  Card_Talent,
+  Card_Unit,
+  EndTurnPayload,
+  ErrorPayload,
+  Lobby,
+  MatchState,
+  MoveUnitPayload,
+  PlaySpellCardPayload,
+  PlayTalentCardPayload,
+  PlayUnitCardPayload,
+} from '@repo/shared';
 import {
   BOARD_H,
   BOARD_W,
@@ -12,26 +24,41 @@ import {
   FLAG_B,
   MANA_PER_TURN,
   MOVE_RANGE,
-  SIDE_ROWS,
-  UNIT_COST,
-  type MoveUnitPayload,
 } from '@repo/shared';
 import {
   endTurn,
   joinLobby,
   moveUnit,
-  placeUnit,
+  playSpellCard,
+  playTalentCard,
+  playUnitCard,
   socketClient,
 } from '../../../lib/socket';
 import { Button } from '../../../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import type * as PhaserType from 'phaser';
+import {
+  computeSpawnRowsForSide,
+  computeTalentRangeCells,
+  resolveSpellArea,
+  type BoardCell,
+} from '../../../lib/game/helpers';
 
 type Mode =
   | { kind: 'idle' }
-  | { kind: 'spawn'; unitType: keyof typeof UNIT_COST }
-  | { kind: 'move'; unitId: string };
+  | { kind: 'move'; unitId: string }
+  | { kind: 'unitCard'; cardId: string; card: Card_Unit }
+  | { kind: 'spellCard'; cardId: string; card: Card_Spell }
+  | { kind: 'talentCard'; cardId: string; card: Card_Talent };
 
 type Highlight = { x: number; y: number; color: number };
+
+type TileCoords = { x: number; y: number };
+
+type SceneApi = PhaserType.Scene & {
+  renderMatch: (match: MatchState | null) => void;
+  setHighlights: (cells: Highlight[]) => void;
+};
 
 const DEFAULT_BOARD: MatchState['board'] = {
   width: BOARD_W,
@@ -40,11 +67,7 @@ const DEFAULT_BOARD: MatchState['board'] = {
   flagB: FLAG_B,
 };
 
-type TileCoords = { x: number; y: number };
-
-type PlayerSide = 'A' | 'B';
-
-const getPlayerSide = (lobby: Lobby | null, sid: string): PlayerSide | null => {
+const getPlayerSide = (lobby: Lobby | null, sid: string): 'A' | 'B' | null => {
   if (!lobby) return null;
   if (lobby.players.length < 2) return null;
   const sorted = [...lobby.players].sort(
@@ -55,31 +78,28 @@ const getPlayerSide = (lobby: Lobby | null, sid: string): PlayerSide | null => {
   return null;
 };
 
-const computeSpawnCells = (
-  lobby: Lobby | null,
-  match: MatchState | null,
-  unitType: keyof typeof UNIT_COST,
-): Highlight[] => {
-  if (!lobby || !match) return [];
-  const side = getPlayerSide(lobby, match.currentPlayerSid);
-  if (!side) return [];
-  const rows = SIDE_ROWS[side];
-  const cells: Highlight[] = [];
-  for (let y = rows.min; y <= rows.max; y += 1) {
-    for (let x = 0; x < BOARD_W; x += 1) {
-      const occupied = match.units.some((unit) => unit.x === x && unit.y === y);
-      if (!occupied) {
-        cells.push({ x, y, color: 0x22c55e });
-      }
-    }
+const describeCard = (card: Card_Unit | Card_Spell | Card_Talent) => {
+  if (card.kind === 'Unit') {
+    return `${card.unitType} • Cost ${card.cost} • HP ${card.hpBase}`;
   }
-  return cells;
+  if (card.kind === 'Spell') {
+    return `${card.name} • Cost ${card.cost}`;
+  }
+  return `${card.unitType} Talent • Cost ${card.cost}`;
 };
 
-const computeMoveCells = (match: MatchState | null, unitId: string): Highlight[] => {
-  if (!match) return [];
+const computeSpawnCells = (match: MatchState, lobby: Lobby | null, sid: string) => {
+  const side = getPlayerSide(lobby, sid);
+  if (!side) return [] as Highlight[];
+  const potential = computeSpawnRowsForSide(side);
+  return potential
+    .filter((cell) => !match.units.some((unit) => unit.x === cell.x && unit.y === cell.y))
+    .map((cell) => ({ ...cell, color: 0x22c55e }));
+};
+
+const computeMoveCells = (match: MatchState, unitId: string) => {
   const unit = match.units.find((u) => u.id === unitId);
-  if (!unit) return [];
+  if (!unit) return [] as Highlight[];
   const cells: Highlight[] = [];
   const range = MOVE_RANGE[unit.type];
   for (let y = 0; y < BOARD_H; y += 1) {
@@ -92,12 +112,37 @@ const computeMoveCells = (match: MatchState | null, unitId: string): Highlight[]
       }
     }
   }
+  cells.push({ x: unit.x, y: unit.y, color: 0xf97316 });
   return cells;
 };
 
-type SceneApi = PhaserType.Scene & {
-  renderMatch: (match: MatchState | null) => void;
-  setHighlights: (cells: Highlight[]) => void;
+const computeSpellHighlights = (
+  match: MatchState,
+  card: Card_Spell,
+  anchor: BoardCell | null,
+): Highlight[] => {
+  if (!anchor) return [];
+  const cells = resolveSpellArea(card.area, anchor);
+  return cells.map((cell) => ({ ...cell, color: 0xef4444 }));
+};
+
+const computeTalentHighlights = (
+  match: MatchState,
+  card: Card_Talent,
+): Highlight[] => {
+  const sourceUnit = match.units.find((unit) => unit.id === card.sourceUnitId);
+  if (!sourceUnit) return [];
+  const rangeCells = computeTalentRangeCells(card, { x: sourceUnit.x, y: sourceUnit.y });
+  const highlights = rangeCells.map((cell) => ({ ...cell, color: 0xa855f7 }));
+  highlights.push({ x: sourceUnit.x, y: sourceUnit.y, color: 0xf97316 });
+  return highlights;
+};
+
+const formatTalentText = (card: Card_Talent) => {
+  if (card.effect.type === 'damage') {
+    return `${card.text} (Damage ${card.effect.amount})`;
+  }
+  return `${card.text} (Heal ${card.effect.amount})`;
 };
 
 export default function GamePage() {
@@ -107,12 +152,14 @@ export default function GamePage() {
   const phaserRef = useRef<PhaserType.Game | null>(null);
   const sceneRef = useRef<SceneApi | null>(null);
   const tileHandlerRef = useRef<(coords: TileCoords) => void>(() => undefined);
+  const hoverHandlerRef = useRef<(coords: TileCoords | null) => void>(() => undefined);
   const [lobby, setLobby] = useState<Lobby | null>(null);
   const [match, setMatch] = useState<MatchState | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: 'idle' });
   const [currentUserSid, setCurrentUserSid] = useState<string | null>(null);
+  const [hoverCell, setHoverCell] = useState<TileCoords | null>(null);
+  const [isDeckOpen, setIsDeckOpen] = useState(false);
 
-  // Compute derived state
   const isMyTurn = match && currentUserSid && match.currentPlayerSid === currentUserSid;
   const isGameActive = match && !match.winnerSid;
 
@@ -143,23 +190,46 @@ export default function GamePage() {
   useEffect(() => {
     tileHandlerRef.current = (coords: TileCoords) => {
       if (!match || !params?.id) return;
-      // Disable tile clicks if it's not the player's turn or game is over
       if (!isMyTurn || !isGameActive) return;
+      if (!currentUserSid) return;
 
-      if (mode.kind === 'spawn') {
-        const spawnable = computeSpawnCells(lobby, match, mode.unitType).some(
-          (cell) => cell.x === coords.x && cell.y === coords.y,
-        );
-        if (spawnable) {
-          const payload: PlaceUnitPayload = {
+      if (mode.kind === 'unitCard') {
+        const highlights = computeSpawnCells(match, lobby, currentUserSid);
+        const isValid = highlights.some((cell) => cell.x === coords.x && cell.y === coords.y);
+        if (isValid) {
+          const payload: PlayUnitCardPayload = {
             lobbyId: params.id,
-            type: mode.unitType,
+            cardId: mode.cardId,
             x: coords.x,
             y: coords.y,
           };
-          placeUnit(payload);
+          playUnitCard(payload);
           setMode({ kind: 'idle' });
         }
+        return;
+      }
+
+      if (mode.kind === 'spellCard') {
+        const payload: PlaySpellCardPayload = {
+          lobbyId: params.id,
+          cardId: mode.cardId,
+          anchorX: coords.x,
+          anchorY: coords.y,
+        };
+        playSpellCard(payload);
+        setMode({ kind: 'idle' });
+        return;
+      }
+
+      if (mode.kind === 'talentCard') {
+        const payload: PlayTalentCardPayload = {
+          lobbyId: params.id,
+          cardId: mode.cardId,
+          targetX: coords.x,
+          targetY: coords.y,
+        };
+        playTalentCard(payload);
+        setMode({ kind: 'idle' });
         return;
       }
 
@@ -169,7 +239,7 @@ export default function GamePage() {
         );
         if (movable) {
           const payload: MoveUnitPayload = {
-            lobbyId: params.id!,
+            lobbyId: params.id,
             unitId: mode.unitId,
             toX: coords.x,
             toY: coords.y,
@@ -192,19 +262,25 @@ export default function GamePage() {
         setMode({ kind: 'idle' });
       }
     };
-  }, [lobby, match, mode, params?.id, isMyTurn, isGameActive]);
+  }, [match, mode, params?.id, lobby, isMyTurn, isGameActive, currentUserSid]);
+
+  useEffect(() => {
+    hoverHandlerRef.current = (coords: TileCoords | null) => {
+      setHoverCell(coords);
+    };
+  }, []);
 
   useEffect(() => {
     let disposed = false;
     const mount = async () => {
       if (!containerRef.current || phaserRef.current) return;
-      const Phaser = (await import('phaser')) as PhaserType;
+      const Phaser = (await import('phaser')) as typeof import('phaser');
+      const { Scene, AUTO, Game } = Phaser;
+
       let resolveScene: (scene: SceneApi) => void = () => undefined;
       const sceneReady = new Promise<SceneApi>((resolve) => {
         resolveScene = resolve;
       });
-
-      const { Scene, AUTO, Game } = Phaser;
 
       class BoardScene extends Scene {
         private tileSize = 54;
@@ -276,6 +352,12 @@ export default function GamePage() {
               rect.on('pointerdown', () => {
                 this.events.emit('tile:click', { x, y });
               });
+              rect.on('pointerover', () => {
+                this.events.emit('tile:hover', { x, y });
+              });
+              rect.on('pointerout', () => {
+                this.events.emit('tile:hover', null);
+              });
             }
           }
           this.updateFlagMarkers(DEFAULT_BOARD);
@@ -289,31 +371,38 @@ export default function GamePage() {
           this.unitTexts.clear();
         }
 
-        renderMatch(match: MatchState | null) {
+        renderMatch(matchState: MatchState | null) {
           this.clearUnits();
-          if (!match) {
+          if (!matchState) {
             this.updateFlagMarkers(DEFAULT_BOARD);
             return;
           }
-          this.updateFlagMarkers(match.board);
-          for (const unit of match.units) {
+          this.updateFlagMarkers(matchState.board);
+          for (const unit of matchState.units) {
             const center = this.tileCenter(unit.x, unit.y);
             const text = this.add
               .text(
                 center.x,
                 center.y,
-                unit.type,
+                `${unit.type}\n${unit.hp}/${unit.hpMax}`,
                 {
-                  color: '#f8fafc',
+                  color: unit.owner === matchState.currentPlayerSid ? '#f8fafc' : '#cbd5f5',
                   fontSize: '12px',
                   fontFamily: 'monospace',
+                  align: 'center',
                 },
               )
-              .setOrigin(0.5, 0.5)
+              .setOrigin(0.5, 0.6)
               .setDepth(2)
               .setInteractive({ useHandCursor: true });
             text.on('pointerdown', () => {
               this.events.emit('tile:click', { x: unit.x, y: unit.y });
+            });
+            text.on('pointerover', () => {
+              this.events.emit('tile:hover', { x: unit.x, y: unit.y });
+            });
+            text.on('pointerout', () => {
+              this.events.emit('tile:hover', null);
             });
             this.unitTexts.set(unit.id, text);
           }
@@ -359,6 +448,9 @@ export default function GamePage() {
       scene.events.on('tile:click', (coords: TileCoords) => {
         tileHandlerRef.current(coords);
       });
+      scene.events.on('tile:hover', (coords: TileCoords | null) => {
+        hoverHandlerRef.current(coords);
+      });
       if (match) {
         scene.renderMatch(match);
       }
@@ -383,21 +475,45 @@ export default function GamePage() {
     }
   }, [match]);
 
+  const yourHandCards = useMemo(() => {
+    if (!match || !currentUserSid) return [] as Array<{ cardId: string; card: Card_Unit | Card_Spell }>;
+    const deckState = match.decks[currentUserSid];
+    if (!deckState) return [];
+    return deckState.hand
+      .map((cardId) => ({ cardId, card: match.cards[cardId] }))
+      .filter(
+        (entry): entry is { cardId: string; card: Card_Unit | Card_Spell } =>
+          Boolean(entry.card) && entry.card.kind !== 'Talent',
+      );
+  }, [match, currentUserSid]);
+
+  const yourTalents = useMemo(() => {
+    if (!match || !currentUserSid) return [] as Array<{ cardId: string; card: Card_Talent }>;
+    const talentIds = match.talentsInHand[currentUserSid] ?? [];
+    return talentIds
+      .map((cardId) => ({ cardId, card: match.cards[cardId] }))
+      .filter(
+        (entry): entry is { cardId: string; card: Card_Talent } =>
+          Boolean(entry.card) && entry.card.kind === 'Talent',
+      );
+  }, [match, currentUserSid]);
+
   const highlights = useMemo(() => {
-    if (!match) return [] as Highlight[];
-    if (mode.kind === 'spawn') {
-      return computeSpawnCells(lobby, match, mode.unitType);
+    if (!match || !currentUserSid) return [] as Highlight[];
+    if (mode.kind === 'unitCard') {
+      return computeSpawnCells(match, lobby, currentUserSid);
     }
     if (mode.kind === 'move') {
-      const cells = computeMoveCells(match, mode.unitId);
-      const unit = match.units.find((u) => u.id === mode.unitId);
-      if (unit) {
-        cells.push({ x: unit.x, y: unit.y, color: 0xf97316 });
-      }
-      return cells;
+      return computeMoveCells(match, mode.unitId);
+    }
+    if (mode.kind === 'spellCard') {
+      return computeSpellHighlights(match, mode.card, hoverCell);
+    }
+    if (mode.kind === 'talentCard') {
+      return computeTalentHighlights(match, mode.card);
     }
     return [] as Highlight[];
-  }, [lobby, match, mode]);
+  }, [match, lobby, currentUserSid, mode, hoverCell]);
 
   useEffect(() => {
     if (sceneRef.current) {
@@ -410,10 +526,6 @@ export default function GamePage() {
     return null;
   }
 
-  const handleSpawnClick = (unitType: keyof typeof UNIT_COST) => {
-    setMode({ kind: 'spawn', unitType });
-  };
-
   const handleEndTurn = () => {
     if (!params?.id) return;
     const payload: EndTurnPayload = { lobbyId: params.id };
@@ -421,10 +533,20 @@ export default function GamePage() {
     setMode({ kind: 'idle' });
   };
 
-  const currentMana = match ? match.mana[match.currentPlayerSid] ?? 0 : 0;
+  const currentMana = match && currentUserSid ? match.mana[currentUserSid] ?? 0 : 0;
+  const deckState = match && currentUserSid ? match.decks[currentUserSid] : null;
+
+  const deckSections = deckState
+    ? [
+        { label: 'Deck', items: deckState.deck },
+        { label: 'Hand', items: deckState.hand },
+        { label: 'Discard', items: deckState.discard },
+        { label: 'Graveyard', items: deckState.graveyard },
+      ]
+    : [];
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 px-6 py-10">
+    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-4 px-6 py-10">
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">Game #{params.id}</h1>
         {lobby && (
@@ -440,7 +562,7 @@ export default function GamePage() {
           </p>
         )}
       </div>
-      <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[2fr_1.1fr]">
         <div
           ref={containerRef}
           className="flex h-[520px] items-center justify-center overflow-hidden rounded-xl border border-border bg-slate-900"
@@ -448,40 +570,142 @@ export default function GamePage() {
           {!match && <span className="text-muted-foreground">Waiting for match...</span>}
         </div>
         <aside className="space-y-4 rounded-xl border border-border p-4">
-          <div>
-            <h2 className="text-sm font-semibold uppercase text-muted-foreground">Mana</h2>
-            <p className="mt-1 text-lg font-bold text-sky-300">{currentMana}</p>
-            <p className="text-xs text-muted-foreground">
-              Active player mana per turn: {MANA_PER_TURN}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <h2 className="text-sm font-semibold uppercase text-muted-foreground">Summon</h2>
-            <div className="flex flex-wrap gap-2">
-              {(Object.keys(UNIT_COST) as Array<keyof typeof UNIT_COST>).map((unitType) => (
-                <Button
-                  key={unitType}
-                  variant={mode.kind === 'spawn' && mode.unitType === unitType ? 'default' : 'outline'}
-                  onClick={() => handleSpawnClick(unitType)}
-                  disabled={!isGameActive || !isMyTurn}
-                >
-                  {unitType} ({UNIT_COST[unitType]})
-                </Button>
-              ))}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold uppercase text-muted-foreground">Mana</h2>
+              <p className="mt-1 text-lg font-bold text-sky-300">{currentMana}</p>
+              <p className="text-xs text-muted-foreground">Per turn: {MANA_PER_TURN}</p>
             </div>
-          </div>
-          <div className="space-y-2">
-            <h2 className="text-sm font-semibold uppercase text-muted-foreground">Actions</h2>
             <Button onClick={handleEndTurn} disabled={!isGameActive || !isMyTurn}>
               End Turn
             </Button>
           </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase text-muted-foreground">Deck Viewer</h2>
+              <Button variant="outline" size="sm" onClick={() => setIsDeckOpen((prev) => !prev)}>
+                {isDeckOpen ? 'Hide' : 'Show'}
+              </Button>
+            </div>
+            {isDeckOpen && (
+              <Card className="bg-slate-950/40">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Your Cards</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-3 text-sm">
+                  {deckSections.map((section) => (
+                    <div key={section.label}>
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">{section.label}</p>
+                      {section.items.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">Empty</p>
+                      ) : (
+                        <ul className="mt-1 space-y-1">
+                          {section.items.map((cardId) => {
+                            const card = match?.cards[cardId];
+                            if (!card || card.kind === 'Talent') return null;
+                            return (
+                              <li key={cardId} className="flex items-center justify-between gap-2">
+                                <span className="truncate">{describeCard(card)}</span>
+                                <span className="text-[10px] text-muted-foreground">{cardId.slice(0, 6)}</span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold uppercase text-muted-foreground">Hand</h2>
+            <div className="flex flex-col gap-2">
+              {yourHandCards.length === 0 && (
+                <p className="text-xs text-muted-foreground">No cards in hand.</p>
+              )}
+              {yourHandCards.map(({ cardId, card }) => {
+                const isSelected =
+                  (mode.kind === 'unitCard' || mode.kind === 'spellCard') && mode.cardId === cardId;
+                const disabled = !isMyTurn || !isGameActive;
+                return (
+                  <button
+                    key={cardId}
+                    type="button"
+                    className={`flex flex-col rounded-lg border p-2 text-left transition ${
+                      isSelected ? 'border-sky-400 bg-sky-500/10' : 'border-border bg-slate-950/40'
+                    } ${disabled ? 'opacity-50' : 'hover:border-sky-400 hover:bg-sky-500/10'}`}
+                    onClick={() => {
+                      if (disabled) return;
+                      if (card.kind === 'Unit') {
+                        setMode((prev) =>
+                          prev.kind === 'unitCard' && prev.cardId === cardId
+                            ? { kind: 'idle' }
+                            : { kind: 'unitCard', cardId, card },
+                        );
+                      } else {
+                        setMode((prev) =>
+                          prev.kind === 'spellCard' && prev.cardId === cardId
+                            ? { kind: 'idle' }
+                            : { kind: 'spellCard', cardId, card },
+                        );
+                      }
+                    }}
+                  >
+                    <span className="text-sm font-semibold text-sky-200">
+                      {card.kind === 'Unit' ? card.unitType : card.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{describeCard(card)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold uppercase text-muted-foreground">Talents</h2>
+            <div className="flex flex-col gap-2">
+              {yourTalents.length === 0 && (
+                <p className="text-xs text-muted-foreground">No talents available.</p>
+              )}
+              {yourTalents.map(({ cardId, card }) => {
+                const isSelected = mode.kind === 'talentCard' && mode.cardId === cardId;
+                const disabled = !isMyTurn || !isGameActive;
+                return (
+                  <button
+                    key={cardId}
+                    type="button"
+                    className={`flex flex-col rounded-lg border p-2 text-left transition ${
+                      isSelected ? 'border-purple-400 bg-purple-500/10' : 'border-border bg-slate-950/40'
+                    } ${disabled ? 'opacity-50' : 'hover:border-purple-400 hover:bg-purple-500/10'}`}
+                    onClick={() => {
+                      if (disabled) return;
+                      setMode((prev) =>
+                        prev.kind === 'talentCard' && prev.cardId === cardId
+                          ? { kind: 'idle' }
+                          : { kind: 'talentCard', cardId, card },
+                      );
+                    }}
+                  >
+                    <span className="text-sm font-semibold text-purple-200">{card.unitType} Talent</span>
+                    <span className="text-xs text-muted-foreground">{formatTalentText(card)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div>
             <h2 className="text-sm font-semibold uppercase text-muted-foreground">Players</h2>
             <ul className="mt-2 space-y-1 text-sm">
               {lobby?.players.map((player) => (
                 <li key={player.sid} className="flex items-center justify-between">
-                  <span>{player.sid.slice(0, 8)}</span>
+                  <span>
+                    {player.sid.slice(0, 8)}
+                    {player.sid === currentUserSid && <span className="ml-1 text-xs text-sky-400">(You)</span>}
+                  </span>
                   <span className="text-xs text-muted-foreground">
                     Mana: {match?.mana[player.sid] ?? 0}
                   </span>

@@ -11,9 +11,11 @@ import {
   type LobbyListPayload,
   type ErrorPayload,
   type StateSync,
-  type PlaceUnitPayload,
   type MoveUnitPayload,
   type EndTurnPayload,
+  type PlayUnitCardPayload,
+  type PlaySpellCardPayload,
+  type PlayTalentCardPayload,
 } from '@repo/shared';
 
 const SOCKET_URL = `${process.env.NEXT_PUBLIC_SOCKET_URL ?? 'http://localhost:4000'}/game`;
@@ -121,16 +123,24 @@ export function passTurn(lobbyId: string) {
   socketClient.emit(EVENTS.TURN_PASS, { lobbyId });
 }
 
-export function placeUnit(payload: PlaceUnitPayload) {
-  socketClient.emit(EVENTS.GAME_PLACE_UNIT, payload);
-}
-
 export function moveUnit(payload: MoveUnitPayload) {
   socketClient.emit(EVENTS.GAME_MOVE_UNIT, payload);
 }
 
 export function endTurn(payload: EndTurnPayload) {
   socketClient.emit(EVENTS.GAME_END_TURN, payload);
+}
+
+export function playUnitCard(payload: PlayUnitCardPayload) {
+  socketClient.emit(EVENTS.CARD_PLAY_UNIT, payload);
+}
+
+export function playSpellCard(payload: PlaySpellCardPayload) {
+  socketClient.emit(EVENTS.CARD_PLAY_SPELL, payload);
+}
+
+export function playTalentCard(payload: PlayTalentCardPayload) {
+  socketClient.emit(EVENTS.CARD_PLAY_TALENT, payload);
 }
 
 export type LobbyState = Lobby;

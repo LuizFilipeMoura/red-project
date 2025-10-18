@@ -2,14 +2,7 @@ import { Mutex } from 'async-mutex';
 import { nanoid } from 'nanoid';
 import type { PrismaClient } from '@repo/db';
 import type { Lobby, MatchState, Player } from '@repo/shared';
-import {
-  BOARD_H,
-  BOARD_W,
-  FLAG_A,
-  FLAG_B,
-  LOBBY_CAPACITY,
-  MANA_PER_TURN,
-} from '@repo/shared';
+import { BOARD_H, BOARD_W, FLAG_A, FLAG_B, LOBBY_CAPACITY } from '@repo/shared';
 
 export type LobbyRow = {
   id: string;
@@ -101,6 +94,10 @@ export const persistSnapshot = async (
 
   const now = new Date();
 
+  const decksJson = JSON.stringify(state.match.decks);
+  const cardsJson = JSON.stringify(state.match.cards);
+  const talentsJson = JSON.stringify(state.match.talentsInHand);
+
   await db.match.upsert({
     where: { id: state.meta.id },
     create: {
@@ -108,12 +105,18 @@ export const persistSnapshot = async (
       currentPlayerSid: state.match.currentPlayerSid,
       turnNumber: state.match.turnNumber,
       stateJson: snapshot,
+      decksJson,
+      cardsJson,
+      talentsJson,
       updatedAt: now,
     },
     update: {
       currentPlayerSid: state.match.currentPlayerSid,
       turnNumber: state.match.turnNumber,
       stateJson: snapshot,
+      decksJson,
+      cardsJson,
+      talentsJson,
       updatedAt: now,
     },
   });
@@ -129,6 +132,8 @@ export const persistSnapshot = async (
         x: unit.x,
         y: unit.y,
         canMoveAtTurn: unit.canMoveAtTurn,
+        hp: unit.hp,
+        hpMax: unit.hpMax,
       })),
     });
   }
@@ -193,6 +198,9 @@ const withDefaultBoard = (match: MatchState | null, lobbyId: string): MatchState
     currentPlayerSid: match.currentPlayerSid,
     turnNumber: match.turnNumber,
     mana: match.mana ?? {},
+    decks: match.decks ?? {},
+    cards: match.cards ?? {},
+    talentsInHand: match.talentsInHand ?? {},
     winnerSid: match.winnerSid ?? null,
   };
 };
@@ -206,6 +214,9 @@ export const loadMatchState = async (db: PrismaClient, lobby: LobbyState) => {
 
   const unitRows = await db.unit.findMany({ where: { matchId: lobby.meta.id } });
   const parsed = JSON.parse(matchRow.stateJson) as { match?: MatchState };
+  const parsedDecks = JSON.parse(matchRow.decksJson ?? '{}') as MatchState['decks'];
+  const parsedCards = JSON.parse(matchRow.cardsJson ?? '{}') as MatchState['cards'];
+  const parsedTalents = JSON.parse(matchRow.talentsJson ?? '{}') as MatchState['talentsInHand'];
 
   const baseMatch = withDefaultBoard(
     parsed.match ?? {
@@ -215,6 +226,9 @@ export const loadMatchState = async (db: PrismaClient, lobby: LobbyState) => {
       currentPlayerSid: matchRow.currentPlayerSid,
       turnNumber: matchRow.turnNumber,
       mana: {},
+      decks: parsedDecks,
+      cards: parsedCards,
+      talentsInHand: parsedTalents,
       winnerSid: null,
     },
     lobby.meta.id,
@@ -225,6 +239,10 @@ export const loadMatchState = async (db: PrismaClient, lobby: LobbyState) => {
     return;
   }
 
+  baseMatch.decks = parsedDecks;
+  baseMatch.cards = parsedCards;
+  baseMatch.talentsInHand = parsedTalents;
+
   baseMatch.units = unitRows.map((unit) => ({
     id: unit.id,
     type: unit.type as MatchState['units'][number]['type'],
@@ -232,6 +250,8 @@ export const loadMatchState = async (db: PrismaClient, lobby: LobbyState) => {
     x: unit.x,
     y: unit.y,
     canMoveAtTurn: unit.canMoveAtTurn,
+    hp: unit.hp,
+    hpMax: unit.hpMax,
   }));
 
   lobby.match = baseMatch;
@@ -287,8 +307,11 @@ export const initializeMatchState = (
   currentPlayerSid: playerOrder[0],
   turnNumber: 1,
   mana: {
-    [playerOrder[0]]: MANA_PER_TURN,
+    [playerOrder[0]]: 0,
     [playerOrder[1]]: 0,
   },
+  decks: {},
+  cards: {},
+  talentsInHand: { [playerOrder[0]]: [], [playerOrder[1]]: [] },
   winnerSid: null,
 });
