@@ -1,14 +1,20 @@
-import { PrismaClient } from '@prisma/client';
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { env } from './env.js';
+import * as schema from './schema.js';
 
-// Singleton pattern for Prisma Client
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+const globalForDb = globalThis as unknown as {
+  sqlite: Database | undefined;
 };
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient();
+const createConnection = () => new Database(env.DATABASE_FILE);
+
+const sqlite = globalForDb.sqlite ?? createConnection();
 
 if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
+  globalForDb.sqlite = sqlite;
 }
 
-export * from '@prisma/client';
+export const db = drizzle(sqlite, { schema });
+
+export * from './schema.js';

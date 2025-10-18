@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import type { ErrorPayload, Lobby } from '@repo/shared';
+import { EVENTS, type ErrorPayload, type Lobby, type StateSync } from '@repo/shared';
 import {
   joinLobby,
   leaveLobby,
@@ -26,7 +26,7 @@ export default function LobbyPage() {
     console.log('Setting up state:sync listener');
     joinLobby(id);
 
-    const unsub = socketClient.on('state:sync', (payload: { lobby: Lobby }) => {
+    const unsub = socketClient.on<StateSync>(EVENTS.STATE_SYNC, (payload) => {
       console.log("State sync received:", payload);
       if (payload.lobby.id === id) {
         setLobby(payload.lobby);

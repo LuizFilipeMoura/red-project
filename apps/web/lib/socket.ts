@@ -11,6 +11,9 @@ import {
   type LobbyListPayload,
   type ErrorPayload,
   type StateSync,
+  type PlaceUnitPayload,
+  type MoveUnitPayload,
+  type EndTurnPayload,
 } from '@repo/shared';
 
 const SOCKET_URL = `${process.env.NEXT_PUBLIC_SOCKET_URL ?? 'http://localhost:4000'}/game`;
@@ -112,6 +115,18 @@ export function startLobby(lobbyId: string) {
 
 export function passTurn(lobbyId: string) {
   socketClient.emit(EVENTS.TURN_PASS, { lobbyId });
+}
+
+export function placeUnit(payload: PlaceUnitPayload) {
+  socketClient.emit(EVENTS.GAME_PLACE_UNIT, payload);
+}
+
+export function moveUnit(payload: MoveUnitPayload) {
+  socketClient.emit(EVENTS.GAME_MOVE_UNIT, payload);
+}
+
+export function endTurn(payload: EndTurnPayload) {
+  socketClient.emit(EVENTS.GAME_END_TURN, payload);
 }
 
 export type LobbyState = Lobby;

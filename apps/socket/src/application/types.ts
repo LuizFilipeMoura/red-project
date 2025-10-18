@@ -1,11 +1,13 @@
 import type { Socket } from 'socket.io';
 import type { z } from 'zod';
 import type { Logger } from 'pino';
-import type { PrismaClient } from '@repo/db';
+import type { db } from '@repo/db';
 import type { LobbyState, LobbyStore } from '../state.js';
 
+export type DbClient = typeof db;
+
 export type HandlerContext = {
-  db: PrismaClient;
+  db: DbClient;
   store: LobbyStore;
   socket: Socket;
   sid: string;
@@ -13,7 +15,7 @@ export type HandlerContext = {
   emitError: (code: string, message: string) => void;
   joinLobbyRoom: (lobbyId: string) => Promise<void> | void;
   leaveLobbyRoom: (lobbyId: string) => Promise<void> | void;
-  broadcastState: (lobby: LobbyState) => Promise<void>;
+  broadcastState: (lobby: LobbyState, action?: { type: string; payload: unknown }) => Promise<void>;
   scheduleTurnTimeout: (lobby: LobbyState, duration?: number) => void;
   clearLobbyTimeout: (lobbyId: string) => void;
   checkRateLimit: (event: string) => boolean;

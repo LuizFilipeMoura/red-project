@@ -1,9 +1,11 @@
 import { EVENTS, LOBBY_CAPACITY, schemas } from '@repo/shared';
 import type { z } from 'zod';
+import { players, lobbies as lobbiesTable } from '@repo/db';
+import { eq } from 'drizzle-orm';
 import { ApplicationError } from '../errors.js';
 import type { EventHandler, HandlerContext } from '../types.js';
 import { verifyPassword } from '../../security.js';
-import type { PlayerState } from '../../state.js';
+import { initializeMatchState, type PlayerState } from '../../state.js';
 
 const schema = schemas[EVENTS.JOIN];
 
@@ -29,20 +31,24 @@ export const handleJoinLobby: EventHandler<JoinLobbyInput> = async (context, inp
       throw new ApplicationError('PASSWORD', 'Invalid password');
     }
 
-    const playerInsert = {
+    const joinedAt = Date.now();
+    const [inserted] = await context.db
+      .insert(players)
+      .values({
+        lobbyId: lobby.meta.id,
+        sid: context.sid,
+        joinedAt,
+        isReady: false,
+      })
+      .returning({ id: players.id })
+      .execute();
+
+    const playerState: PlayerState = {
       lobbyId: lobby.meta.id,
       sid: context.sid,
-      joinedAt: new Date(),
+      joinedAt,
       isReady: false,
-    };
-
-    const inserted = await context.db.player.create({ data: playerInsert });
-    const playerState: PlayerState = {
-      lobbyId: playerInsert.lobbyId,
-      sid: playerInsert.sid,
-      joinedAt: playerInsert.joinedAt.getTime(),
-      isReady: playerInsert.isReady,
-      id: inserted.id,
+      id: inserted?.id ?? undefined,
     };
 
     lobby.players.push(playerState);
@@ -50,26 +56,28 @@ export const handleJoinLobby: EventHandler<JoinLobbyInput> = async (context, inp
 
     if (lobby.players.length === LOBBY_CAPACITY) {
       const first = lobby.players[Math.floor(Math.random() * lobby.players.length)];
-      lobby.currentPlayerSid = first.sid;
-      lobby.turnNumber = 1;
-      lobby.meta.status = 'started';
-      await context.db.lobby.update({
-        where: { id: lobby.meta.id },
-        data: { status: lobby.meta.status },
-      });
-      context.scheduleTurnTimeout(lobby);
+      const second = lobby.players.find((player) => player.sid !== first.sid);
+      if (second) {
+        lobby.currentPlayerSid = first.sid;
+        lobby.turnNumber = 1;
+        lobby.meta.status = 'started';
+        lobby.match = initializeMatchState(lobby, [first.sid, second.sid]);
+        await context.db
+          .update(lobbiesTable)
+          .set({ status: lobby.meta.status })
+          .where(eq(lobbiesTable.id, lobby.meta.id))
+          .run();
+      }
     }
 
     await context.broadcastState(lobby);
   });
 };
 
-// Post-process: Send delayed state syncs to ensure client receives the update
 const postProcessJoinLobby = async (context: HandlerContext, input: JoinLobbyInput) => {
   const lobby = context.store.get(input.lobbyId);
   if (!lobby) return;
 
-  // Broadcast state again after 100ms and 1000ms to ensure client receives it
   setTimeout(async () => {
     context.logger.info({ lobbyId: input.lobbyId }, 'Delayed state sync after 100ms');
     await context.broadcastState(lobby);

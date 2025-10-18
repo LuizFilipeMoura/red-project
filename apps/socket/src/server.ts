@@ -3,7 +3,6 @@ import { randomBytes } from 'node:crypto';
 import cookie from 'cookie';
 import signature from 'cookie-signature';
 import { Server, type Socket } from 'socket.io';
-import { Mutex } from 'async-mutex';
 import { z } from 'zod';
 import { env } from './env.js';
 import { logger } from './logger.js';
@@ -24,10 +23,12 @@ import {
 } from './state.js';
 import { registerHandlers } from './application/registry.js';
 import { handlerDefinitions } from './application/handlers';
-import { prisma } from '@repo/db';
-import type { LobbyState, PlayerState } from './state.js';
+import { db as database, lobbies as lobbiesTable } from '@repo/db';
+import type { LobbyState } from './state.js';
+import { hydrateLobbies } from './state.js';
+import { eq } from 'drizzle-orm';
 
-const db = prisma;
+const db = database;
 const store = createLobbyStore();
 
 const httpServer = createServer((_, res) => {
@@ -105,9 +106,12 @@ const parsePayload = <T>(event: keyof typeof schemas, payload: unknown, schema: 
   return schema.parse(payload);
 };
 
-const broadcastState = async (lobby: LobbyState) => {
-  await persistSnapshot(db, lobby);
-  const dto = makeMsg(EVENTS.STATE_SYNC, { lobby: toLobby(lobby) });
+const broadcastState = async (lobby: LobbyState, action?: { type: string; payload: unknown }) => {
+  await persistSnapshot(db, lobby, action);
+  const dto = makeMsg(EVENTS.STATE_SYNC, {
+    lobby: toLobby(lobby),
+    match: lobby.match,
+  });
   gameNs.to(LOBBY_ROOM(lobby.meta.id)).emit(EVENTS.STATE_SYNC, dto);
 };
 
@@ -130,58 +134,7 @@ const scheduleTurnTimeout = (lobby: LobbyState, duration?: number) => {
 };
 
 const loadPersistedState = async () => {
-  const lobbyRows = await db.lobby.findMany({
-    include: {
-      players: true,
-      turns: {
-        orderBy: { id: 'desc' },
-        take: 1,
-      },
-    },
-  });
-  for (const row of lobbyRows) {
-    const playerStates: PlayerState[] = row.players.map((player) => ({
-      id: player.id,
-      lobbyId: player.lobbyId,
-      sid: player.sid,
-      joinedAt: player.joinedAt.getTime(),
-      isReady: Boolean(player.isReady),
-    }));
-    const lobbyState: LobbyState = {
-      meta: {
-        id: row.id,
-        name: row.name,
-        isPrivate: row.isPrivate,
-        passwordHash: row.passwordHash,
-        capacity: row.capacity,
-        ownerSid: row.ownerSid,
-        createdAt: row.createdAt,
-        status: row.status,
-      },
-      players: playerStates,
-      currentPlayerSid: null,
-      turnNumber: 0,
-      deadlineAt: null,
-      mutex: new Mutex(),
-    };
-    if (row.turns.length > 0) {
-      try {
-        const parsed = JSON.parse(row.turns[0].stateJson);
-        lobbyState.currentPlayerSid = parsed?.lobby?.currentPlayerSid ?? null;
-        lobbyState.turnNumber = parsed?.lobby?.turnNumber ?? 0;
-        lobbyState.deadlineAt = parsed?.lobby?.deadlineAt
-          ? Date.parse(parsed.lobby.deadlineAt)
-          : null;
-      } catch (error) {
-        logger.error({ err: error }, 'Failed to parse snapshot');
-      }
-    }
-    store.set(row.id, lobbyState);
-    if (lobbyState.currentPlayerSid) {
-      const remaining = lobbyState.deadlineAt ? Math.max(0, lobbyState.deadlineAt - Date.now()) : undefined;
-      scheduleTurnTimeout(lobbyState, remaining);
-    }
-  }
+  await hydrateLobbies(db, store);
   logger.info({ count: store.size }, 'Restored lobbies from database');
 };
 
@@ -193,7 +146,7 @@ const pruneEmptyLobbies = async () => {
       if (now - lastSeen > LOBBY_RETENTION_MS) {
         clearLobbyTimeoutForStore(store, id);
         store.delete(id);
-        await db.lobby.delete({ where: { id } });
+        await db.delete(lobbiesTable).where(eq(lobbiesTable.id, id)).run();
         logger.info({ lobbyId: id }, 'Removed empty lobby');
       }
     }

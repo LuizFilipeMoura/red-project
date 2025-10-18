@@ -1,7 +1,10 @@
+import { eq } from 'drizzle-orm';
 import { EVENTS, LOBBY_CAPACITY, schemas } from '@repo/shared';
 import type { z } from 'zod';
+import { lobbies as lobbiesTable } from '@repo/db';
 import { ApplicationError } from '../errors.js';
 import type { EventHandler } from '../types.js';
+import { initializeMatchState } from '../../state.js';
 
 const schema = schemas[EVENTS.START];
 
@@ -22,13 +25,20 @@ export const handleStartLobby: EventHandler<StartLobbyInput> = async (context, i
     if (!lobby.currentPlayerSid) {
       lobby.currentPlayerSid = lobby.players[0]?.sid ?? null;
     }
+    if (!lobby.match && lobby.players.length === LOBBY_CAPACITY) {
+      const first = lobby.currentPlayerSid ?? lobby.players[0]!.sid;
+      const second = lobby.players.find((player) => player.sid !== first)?.sid ?? lobby.players[0]!.sid;
+      lobby.match = initializeMatchState(lobby, [first, second]);
+      lobby.turnNumber = lobby.match.turnNumber;
+      lobby.currentPlayerSid = lobby.match.currentPlayerSid;
+    }
 
-    await context.db.lobby.update({
-      where: { id: lobby.meta.id },
-      data: { status: lobby.meta.status },
-    });
+    await context.db
+      .update(lobbiesTable)
+      .set({ status: lobby.meta.status })
+      .where(eq(lobbiesTable.id, lobby.meta.id))
+      .run();
 
-    context.scheduleTurnTimeout(lobby);
     await context.broadcastState(lobby);
   });
 };

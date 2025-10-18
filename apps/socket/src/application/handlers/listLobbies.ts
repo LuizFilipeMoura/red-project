@@ -11,7 +11,7 @@ export const handleListLobbies: EventHandler<ListLobbiesInput> = async (context,
   const lobbiesArray = Array.from(context.store.values())
     .filter((lobby) => !lobby.meta.isPrivate)
     .filter((lobby) => lobby.players.length < LOBBY_CAPACITY)
-    .sort((a, b) => a.meta.createdAt.getTime() - b.meta.createdAt.getTime());
+    .sort((a, b) => a.meta.createdAt - b.meta.createdAt);
 
   const total = lobbiesArray.length;
   const start = (input.page - 1) * input.pageSize;
