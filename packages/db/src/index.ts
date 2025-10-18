@@ -1,21 +1,14 @@
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { PrismaClient } from '@prisma/client';
 
-const dirname = fileURLToPath(new URL('.', import.meta.url));
-
-export const getDatabase = (databaseUrl = process.env.DATABASE_URL ?? 'sqlite.db') => {
-  const db = new Database(databaseUrl);
-  return drizzle(db);
+// Singleton pattern for Prisma Client
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
 };
 
-export const runMigrations = async () => {
-  const db = new Database(process.env.DATABASE_URL ?? 'sqlite.db');
-  const client = drizzle(db);
-  await migrate(client, { migrationsFolder: join(dirname, 'migrations') });
-  return client;
-};
+export const prisma = globalForPrisma.prisma ?? new PrismaClient();
 
-export * from './schema.js';
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
+}
+
+export * from '@prisma/client';

@@ -3,7 +3,6 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import cookie from 'cookie';
 import signature from 'cookie-signature';
 import { Server, type Socket } from 'socket.io';
-import { and, desc, eq } from 'drizzle-orm';
 import { Mutex } from 'async-mutex';
 import { z } from 'zod';
 import { env } from './env.js';
@@ -27,10 +26,10 @@ import {
   attachTimeout,
   clearLobbyTimeout,
 } from './state.js';
-import { getDatabase, lobbies, players, turns } from '@repo/db';
+import { prisma } from '@repo/db';
 import type { LobbyState, PlayerState } from './state.js';
 
-const db = getDatabase(env.DATABASE_URL);
+const db = prisma;
 const store = createLobbyStore();
 
 const httpServer = createServer((_, res) => {
@@ -148,33 +147,43 @@ const scheduleTurnTimeout = (lobby: LobbyState, duration?: number) => {
 };
 
 const loadPersistedState = async () => {
-  const lobbyRows = await db.select().from(lobbies);
+  const lobbyRows = await db.lobby.findMany({
+    include: {
+      players: true,
+      turns: {
+        orderBy: { id: 'desc' },
+        take: 1,
+      },
+    },
+  });
   for (const row of lobbyRows) {
-    const playerRows = await db.select().from(players).where(eq(players.lobbyId, row.id));
-    const playerStates: PlayerState[] = playerRows.map((player) => ({
+    const playerStates: PlayerState[] = row.players.map((player) => ({
       id: player.id,
       lobbyId: player.lobbyId,
       sid: player.sid,
-      joinedAt: player.joinedAt ?? Date.now(),
+      joinedAt: player.joinedAt.getTime(),
       isReady: Boolean(player.isReady),
     }));
     const lobbyState: LobbyState = {
-      meta: row,
+      meta: {
+        id: row.id,
+        name: row.name,
+        isPrivate: row.isPrivate,
+        passwordHash: row.passwordHash,
+        capacity: row.capacity,
+        ownerSid: row.ownerSid,
+        createdAt: row.createdAt,
+        status: row.status,
+      },
       players: playerStates,
       currentPlayerSid: null,
       turnNumber: 0,
       deadlineAt: null,
       mutex: new Mutex(),
     };
-    const lastTurn = await db
-      .select()
-      .from(turns)
-      .where(eq(turns.lobbyId, row.id))
-      .orderBy(desc(turns.id))
-      .limit(1);
-    if (lastTurn.length > 0) {
+    if (row.turns.length > 0) {
       try {
-        const parsed = JSON.parse(lastTurn[0].stateJson);
+        const parsed = JSON.parse(row.turns[0].stateJson);
         lobbyState.currentPlayerSid = parsed?.lobby?.currentPlayerSid ?? null;
         lobbyState.turnNumber = parsed?.lobby?.turnNumber ?? 0;
         lobbyState.deadlineAt = parsed?.lobby?.deadlineAt
@@ -197,11 +206,11 @@ const pruneEmptyLobbies = async () => {
   const now = Date.now();
   for (const [id, lobby] of store) {
     if (lobby.players.length === 0) {
-      const lastSeen = lobby.deadlineAt ?? lobby.meta.createdAt ?? now;
+      const lastSeen = lobby.deadlineAt ?? lobby.meta.createdAt.getTime() ?? now;
       if (now - lastSeen > LOBBY_RETENTION_MS) {
         clearLobbyTimeout(store, id);
         store.delete(id);
-        await db.delete(lobbies).where(eq(lobbies.id, id));
+        await db.lobby.delete({ where: { id } });
         logger.info({ lobbyId: id }, 'Removed empty lobby');
       }
     }
@@ -242,17 +251,20 @@ gameNs.on('connection', (socket) => {
         isPrivate: input.isPrivate ?? Boolean(input.password),
         passwordHash: input.password ? hashPassword(input.password) : null,
       });
-      await db.insert(lobbies).values(lobbyRow);
+      await db.lobby.create({ data: lobbyRow });
       const playerInsert = {
         lobbyId: lobbyRow.id,
         sid,
-        joinedAt: Date.now(),
+        joinedAt: new Date(),
         isReady: false,
       };
-      const inserted = await db.insert(players).values(playerInsert).returning();
+      const inserted = await db.player.create({ data: playerInsert });
       const playerState: PlayerState = {
-        ...playerInsert,
-        id: inserted[0]?.id ?? null,
+        lobbyId: playerInsert.lobbyId,
+        sid: playerInsert.sid,
+        joinedAt: playerInsert.joinedAt.getTime(),
+        isReady: playerInsert.isReady,
+        id: inserted.id,
       };
       const lobbyState: LobbyState = {
         meta: lobbyRow,
@@ -322,13 +334,16 @@ gameNs.on('connection', (socket) => {
         const playerInsert = {
           lobbyId: lobby.meta.id,
           sid,
-          joinedAt: Date.now(),
+          joinedAt: new Date(),
           isReady: false,
         };
-        const inserted = await db.insert(players).values(playerInsert).returning();
+        const inserted = await db.player.create({ data: playerInsert });
         lobby.players.push({
-          ...playerInsert,
-          id: inserted[0]?.id ?? null,
+          lobbyId: playerInsert.lobbyId,
+          sid: playerInsert.sid,
+          joinedAt: playerInsert.joinedAt.getTime(),
+          isReady: playerInsert.isReady,
+          id: inserted.id,
         });
         joinLobbyRoom(lobby.meta.id);
         if (lobby.players.length === LOBBY_CAPACITY) {
@@ -336,10 +351,10 @@ gameNs.on('connection', (socket) => {
           lobby.currentPlayerSid = first.sid;
           lobby.turnNumber = 1;
           lobby.meta.status = 'started';
-          await db
-            .update(lobbies)
-            .set({ status: lobby.meta.status })
-            .where(eq(lobbies.id, lobby.meta.id));
+          await db.lobby.update({
+            where: { id: lobby.meta.id },
+            data: { status: lobby.meta.status },
+          });
           scheduleTurnTimeout(lobby);
         }
         await broadcastState(lobby);
@@ -361,9 +376,12 @@ gameNs.on('connection', (socket) => {
         const index = lobby.players.findIndex((player) => player.sid === sid);
         if (index >= 0) {
           lobby.players.splice(index, 1);
-          await db
-            .delete(players)
-            .where(and(eq(players.lobbyId, lobby.meta.id), eq(players.sid, sid)));
+          await db.player.deleteMany({
+            where: {
+              lobbyId: lobby.meta.id,
+              sid,
+            },
+          });
           socket.leave(LOBBY_ROOM(lobby.meta.id));
           if (lobby.players.length === 0) {
             clearLobbyTimeout(store, lobby.meta.id);
@@ -371,10 +389,10 @@ gameNs.on('connection', (socket) => {
             lobby.deadlineAt = null;
           }
           lobby.meta.status = 'waiting';
-          await db
-            .update(lobbies)
-            .set({ status: lobby.meta.status })
-            .where(eq(lobbies.id, lobby.meta.id));
+          await db.lobby.update({
+            where: { id: lobby.meta.id },
+            data: { status: lobby.meta.status },
+          });
           if (lobby.currentPlayerSid === sid) {
             lobby.currentPlayerSid = lobby.players[0]?.sid ?? null;
             if (lobby.currentPlayerSid) {

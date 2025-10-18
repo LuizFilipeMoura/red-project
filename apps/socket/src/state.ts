@@ -1,16 +1,14 @@
 import { Mutex } from 'async-mutex';
 import { nanoid } from 'nanoid';
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
+import type { PrismaClient, Lobby as PrismaLobby } from '@repo/db';
 import type { Lobby, Player } from '@repo/shared';
 import {
   LOBBY_CAPACITY,
   TURN_TIMEOUT_MS,
   VERSION,
 } from '@repo/shared';
-import { lobbies, turns } from '@repo/db';
-import type { InferModel } from 'drizzle-orm';
 
-export type LobbyRow = InferModel<typeof lobbies>;
+export type LobbyRow = PrismaLobby;
 
 export type PlayerState = {
   id?: number | null;
@@ -44,7 +42,7 @@ export const toLobby = (state: LobbyState): Lobby => ({
     isReady: Boolean(player.isReady),
   })),
   capacity: LOBBY_CAPACITY,
-  createdAt: new Date(state.meta.createdAt ?? Date.now()).toISOString(),
+  createdAt: state.meta.createdAt.toISOString(),
   ownerSid: state.meta.ownerSid ?? undefined,
   status: state.meta.status as Lobby['status'],
   currentPlayerSid: state.currentPlayerSid ?? undefined,
@@ -63,7 +61,7 @@ export const createLobbyRow = (
   passwordHash: partial.passwordHash ?? null,
   capacity: partial.capacity ?? LOBBY_CAPACITY,
   ownerSid: partial.ownerSid,
-  createdAt: partial.createdAt ?? Date.now(),
+  createdAt: partial.createdAt ?? new Date(),
   status: partial.status ?? 'waiting',
 });
 
@@ -73,20 +71,19 @@ export const toStateSnapshot = (state: LobbyState) => ({
 });
 
 export const persistSnapshot = async (
-  db: BetterSQLite3Database,
+  db: PrismaClient,
   state: LobbyState,
 ) => {
   const snapshot = JSON.stringify(toStateSnapshot(state));
-  await db
-    .insert(turns)
-    .values({
+  await db.turn.create({
+    data: {
       lobbyId: state.meta.id,
       stateJson: snapshot,
       currentPlayerSid: state.currentPlayerSid ?? null,
       turnNumber: state.turnNumber,
-      deadlineAt: state.deadlineAt,
-    })
-    .run();
+      deadlineAt: state.deadlineAt ? new Date(state.deadlineAt) : null,
+    },
+  });
 };
 
 export const removeEmptyLobbies = (
@@ -96,7 +93,7 @@ export const removeEmptyLobbies = (
 ) => {
   for (const [id, lobby] of store) {
     if (lobby.players.length === 0) {
-      const lastTurn = lobby.deadlineAt ?? lobby.meta.createdAt ?? now;
+      const lastTurn = lobby.deadlineAt ?? lobby.meta.createdAt.getTime() ?? now;
       if (now - lastTurn > retentionMs) {
         store.delete(id);
       }

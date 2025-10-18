@@ -3,15 +3,18 @@
   "compilerOptions": {
     "outDir": "dist",
     "module": "ESNext",
-    "moduleResolution": "Node",
+    "moduleResolution": "Bundler",
     "types": ["node"],
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true
   },
   "include": ["src"],
   "ts-node": {
     "esm": true,
+    "experimentalSpecifierResolution": "node",
     "compilerOptions": {
-      "module": "ESNext"
+      "module": "ESNext",
+      "moduleResolution": "Node"
     }
   }
 }

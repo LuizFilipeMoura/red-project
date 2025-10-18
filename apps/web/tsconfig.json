@@ -6,9 +6,32 @@
     "moduleResolution": "Node",
     "allowJs": true,
     "resolveJsonModule": true,
-    "types": ["node"],
-    "incremental": true
+    "types": [
+      "node"
+    ],
+    "incremental": true,
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "noEmit": true,
+    "isolatedModules": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.cjs", "**/*.mjs"],
-  "exclude": ["node_modules"]
+  "include": [
+    "**/*.cjs",
+    "**/*.mjs",
+    "**/*.ts",
+    "**/*.tsx",
+    "next-env.d.ts",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
