@@ -17,7 +17,7 @@ export type HandlerContext = {
   scheduleTurnTimeout: (lobby: LobbyState, duration?: number) => void;
   clearLobbyTimeout: (lobbyId: string) => void;
   checkRateLimit: (event: string) => boolean;
-  parsePayload: <T>(event: string, payload: unknown, schema: z.ZodType<T>) => T;
+  parsePayload: <T>(event: keyof typeof import('@repo/shared').schemas, payload: unknown, schema: z.ZodType<T>) => T;
 };
 
 export type EventHandler<TInput> = (context: HandlerContext, input: TInput) => Promise<void>;

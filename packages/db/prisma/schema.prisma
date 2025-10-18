@@ -1,0 +1,53 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Lobby {
+  id           String    @id
+  name         String
+  isPrivate    Boolean   @default(false) @map("is_private")
+  passwordHash String?   @map("password_hash")
+  capacity     Int
+  ownerSid     String?   @map("owner_sid")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  status       String    @default("waiting")
+
+  players      Player[]
+  turns        Turn[]
+
+  @@map("lobbies")
+}
+
+model Player {
+  id       Int      @id @default(autoincrement())
+  lobbyId  String   @map("lobby_id")
+  sid      String
+  joinedAt DateTime @default(now()) @map("joined_at")
+  isReady  Boolean  @default(false) @map("is_ready")
+
+  lobby    Lobby    @relation(fields: [lobbyId], references: [id], onDelete: Cascade)
+
+  @@map("players")
+}
+
+model Turn {
+  id               Int       @id @default(autoincrement())
+  lobbyId          String    @map("lobby_id")
+  stateJson        String    @map("state_json")
+  currentPlayerSid String?   @map("current_player_sid")
+  turnNumber       Int       @default(0) @map("turn_number")
+  deadlineAt       DateTime? @map("deadline_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  lobby            Lobby     @relation(fields: [lobbyId], references: [id], onDelete: Cascade)
+
+  @@map("turns")
+}
