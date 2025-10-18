@@ -99,4 +99,4 @@ export const endTurnDefinition = {
   useRateLimit: true,
   preProcess: preProcessEndTurn,
   handler: handleEndTurn,
-} as const;
+};

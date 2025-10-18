@@ -107,11 +107,20 @@ const parsePayload = <T>(event: keyof typeof schemas, payload: unknown, schema: 
 
 const broadcastState = async (lobby: LobbyState, action?: { type: string; payload: unknown }) => {
   await persistSnapshot(db, lobby, action);
-  const dto = makeMsg(EVENTS.STATE_SYNC, {
-    lobby: toLobby(lobby),
-    match: lobby.match,
-  });
-  gameNs.to(LOBBY_ROOM(lobby.meta.id)).emit(EVENTS.STATE_SYNC, dto);
+  const lobbyDto = toLobby(lobby);
+  const matchDto = lobby.match;
+
+  // Emit to each player individually with their SID
+  const sockets = await gameNs.in(LOBBY_ROOM(lobby.meta.id)).fetchSockets();
+  for (const socket of sockets) {
+    const sid = socket.data.sid;
+    const dto = makeMsg(EVENTS.STATE_SYNC, {
+      lobby: lobbyDto,
+      match: matchDto,
+      yourSid: sid,
+    });
+    socket.emit(EVENTS.STATE_SYNC, dto);
+  }
 };
 
 const scheduleTurnTimeout = (lobby: LobbyState, duration?: number) => {
@@ -207,3 +216,4 @@ start().catch((error) => {
   logger.error({ err: error }, 'Failed to start server');
   process.exit(1);
 });
+

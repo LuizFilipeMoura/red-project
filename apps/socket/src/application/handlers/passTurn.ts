@@ -2,7 +2,7 @@ import { EVENTS, schemas } from '@repo/shared';
 import type { z } from 'zod';
 import { ApplicationError } from '../errors.js';
 import type { EventHandler, HandlerContext } from '../types.js';
-import { handleEndTurn } from './game/endTurn.js';
+import { handleEndTurn, preProcessEndTurn } from './game/endTurn.js';
 
 const schema = schemas[EVENTS.TURN_PASS];
 
@@ -21,6 +21,7 @@ const preProcessPassTurn = async (context: HandlerContext, input: PassTurnInput)
 };
 
 export const handlePassTurn: EventHandler<PassTurnInput> = async (context, input) => {
+  await preProcessEndTurn(context, input);
   await handleEndTurn(context, input);
 };
 

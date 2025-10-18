@@ -101,17 +101,25 @@ export default function GamePage() {
   const [lobby, setLobby] = useState<Lobby | null>(null);
   const [match, setMatch] = useState<MatchState | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: 'idle' });
+  const [currentUserSid, setCurrentUserSid] = useState<string | null>(null);
+
+  // Compute derived state
+  const isMyTurn = match && currentUserSid && match.currentPlayerSid === currentUserSid;
+  const isGameActive = match && !match.winnerSid;
 
   useEffect(() => {
     const lobbyId = params?.id;
     if (!lobbyId) return;
     joinLobby(lobbyId);
-    const unsubSync = socketClient.on<{ lobby: Lobby; match: MatchState | null }>(
+    const unsubSync = socketClient.on<{ lobby: Lobby; match: MatchState | null; yourSid?: string }>(
       EVENTS.STATE_SYNC,
       (payload) => {
         if (payload.lobby.id !== lobbyId) return;
         setLobby(payload.lobby);
         setMatch(payload.match);
+        if (payload.yourSid) {
+          setCurrentUserSid(payload.yourSid);
+        }
       },
     );
     const unsubError = socketClient.on<ErrorPayload>(EVENTS.ERROR, (payload) => {
@@ -126,6 +134,9 @@ export default function GamePage() {
   useEffect(() => {
     tileHandlerRef.current = (coords: TileCoords) => {
       if (!match || !params?.id) return;
+      // Disable tile clicks if it's not the player's turn or game is over
+      if (!isMyTurn || !isGameActive) return;
+
       if (mode.kind === 'spawn') {
         const spawnable = computeSpawnCells(lobby, match, mode.unitType).some(
           (cell) => cell.x === coords.x && cell.y === coords.y,
@@ -172,7 +183,7 @@ export default function GamePage() {
         setMode({ kind: 'idle' });
       }
     };
-  }, [lobby, match, mode, params?.id]);
+  }, [lobby, match, mode, params?.id, isMyTurn, isGameActive]);
 
   useEffect(() => {
     let disposed = false;
@@ -366,6 +377,7 @@ export default function GamePage() {
           <p className="text-sm text-muted-foreground">
             Turn {match?.turnNumber ?? lobby.turnNumber} • Current player{' '}
             {match?.currentPlayerSid ? match.currentPlayerSid.slice(0, 8) : 'TBD'}
+            {isMyTurn && <span className="ml-2 text-emerald-400 font-semibold">(Your turn!)</span>}
           </p>
         )}
         {match?.winnerSid && (
@@ -397,7 +409,7 @@ export default function GamePage() {
                   key={unitType}
                   variant={mode.kind === 'spawn' && mode.unitType === unitType ? 'default' : 'outline'}
                   onClick={() => handleSpawnClick(unitType)}
-                  disabled={!match || Boolean(match?.winnerSid)}
+                  disabled={!isGameActive || !isMyTurn}
                 >
                   {unitType} ({UNIT_COST[unitType]})
                 </Button>
@@ -406,7 +418,7 @@ export default function GamePage() {
           </div>
           <div className="space-y-2">
             <h2 className="text-sm font-semibold uppercase text-muted-foreground">Actions</h2>
-            <Button onClick={handleEndTurn} disabled={!match || Boolean(match.winnerSid)}>
+            <Button onClick={handleEndTurn} disabled={!isGameActive || !isMyTurn}>
               End Turn
             </Button>
           </div>

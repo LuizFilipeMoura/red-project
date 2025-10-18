@@ -78,6 +78,7 @@ export const matchStateSchema = z.object({
 export const stateSyncSchema = z.object({
   lobby: lobbySchema,
   match: matchStateSchema.nullable(),
+  yourSid: sidSchema.optional(),
 });
 
 export const errorSchema = z.object({

@@ -73,6 +73,10 @@ class SocketManager {
     socket.emit(event, makeMsg(event, data as never));
   }
 
+  getSocketId(): string | undefined {
+    return this.socket?.id;
+  }
+
   on<T>(event: EventValue, handler: (payload: T) => void) {
     if (!isEventKey(event)) return () => undefined;
     this.ensureSocket();
