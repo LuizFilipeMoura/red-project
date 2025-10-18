@@ -1,32 +1,74 @@
 import { EVENTS, LOBBY_CAPACITY, schemas } from '@repo/shared';
 import type { z } from 'zod';
-import { ApplicationError } from '../errors.js';
-import type { EventHandler, HandlerContext } from '../types.js';
-import { verifyPassword } from '../../security.js';
-import { initializeMatchState, type PlayerState } from '../../state.js';
+import { ApplicationError } from '../../errors.js';
+import type { EventHandler, HandlerContext } from '../../types.js';
+import { verifyPassword } from '../../../security.js';
+import { initializeMatchState, type LobbyState, type PlayerState } from '../../../state.js';
 
 const schema = schemas[EVENTS.JOIN];
 
 type JoinLobbyInput = z.infer<typeof schema>;
 
-export const handleJoinLobby: EventHandler<JoinLobbyInput> = async (context, input) => {
+type JoinLobbyContextData = {
+  lobby: LobbyState;
+  isRejoining: boolean;
+  release: () => void;
+};
+
+type JoinLobbyContext = HandlerContext & { [joinLobbyContextKey]?: JoinLobbyContextData };
+
+const joinLobbyContextKey = Symbol('joinLobbyContext');
+
+const setJoinLobbyContext = (context: HandlerContext, data: JoinLobbyContextData) => {
+  (context as JoinLobbyContext)[joinLobbyContextKey] = data;
+};
+
+const getJoinLobbyContext = (context: HandlerContext) => {
+  const data = (context as JoinLobbyContext)[joinLobbyContextKey];
+  if (!data) {
+    throw new ApplicationError('PREPROCESS_REQUIRED', 'Missing join lobby pre-processing context');
+  }
+  return data;
+};
+
+const clearJoinLobbyContext = (context: HandlerContext) => {
+  delete (context as JoinLobbyContext)[joinLobbyContextKey];
+};
+
+export const preProcessJoinLobby = async (context: HandlerContext, input: JoinLobbyInput) => {
   const lobby = context.store.get(input.lobbyId);
   if (!lobby) {
     throw new ApplicationError('NOT_FOUND', 'Lobby not found');
   }
 
-  await lobby.mutex.runExclusive(async () => {
-    if (lobby.players.some((player) => player.sid === context.sid)) {
+  const release = await lobby.mutex.acquire();
+  try {
+    const isRejoining = lobby.players.some((player) => player.sid === context.sid);
+
+    if (!isRejoining) {
+      if (lobby.players.length >= LOBBY_CAPACITY) {
+        throw new ApplicationError('FULL', 'Lobby is full');
+      }
+
+      if (!verifyPassword(lobby.meta.passwordHash ?? null, input.password)) {
+        throw new ApplicationError('PASSWORD', 'Invalid password');
+      }
+    }
+
+    setJoinLobbyContext(context, { lobby, isRejoining, release });
+  } catch (error) {
+    release();
+    throw error;
+  }
+};
+
+export const handleJoinLobby: EventHandler<JoinLobbyInput> = async (context, input) => {
+  const { lobby, isRejoining, release } = getJoinLobbyContext(context);
+
+  try {
+    if (isRejoining) {
       await context.joinLobbyRoom(lobby.meta.id);
       return;
-    }
-
-    if (lobby.players.length >= LOBBY_CAPACITY) {
-      throw new ApplicationError('FULL', 'Lobby is full');
-    }
-
-    if (!verifyPassword(lobby.meta.passwordHash ?? null, input.password)) {
-      throw new ApplicationError('PASSWORD', 'Invalid password');
     }
 
     const joinedAt = Date.now();
@@ -67,7 +109,10 @@ export const handleJoinLobby: EventHandler<JoinLobbyInput> = async (context, inp
     }
 
     await context.broadcastState(lobby);
-  });
+  } finally {
+    release();
+    clearJoinLobbyContext(context);
+  }
 };
 
 const postProcessJoinLobby = async (context: HandlerContext, input: JoinLobbyInput) => {
@@ -89,6 +134,7 @@ export const joinLobbyDefinition = {
   event: EVENTS.JOIN,
   schema,
   useRateLimit: true,
+  preProcess: preProcessJoinLobby,
   handler: handleJoinLobby,
   postProcess: postProcessJoinLobby,
 } as const;

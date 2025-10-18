@@ -1,24 +1,62 @@
 import { EVENTS, LOBBY_CAPACITY, schemas } from '@repo/shared';
 import type { z } from 'zod';
-import { ApplicationError } from '../errors.js';
-import type { EventHandler } from '../types.js';
-import { initializeMatchState } from '../../state.js';
-import { createInitialDecks, startTurnForPlayer } from '../../game/cards.js';
+import { ApplicationError } from '../../errors.js';
+import type { EventHandler, HandlerContext } from '../../types.js';
+import { initializeMatchState, type LobbyState } from '../../../state.js';
+import { createInitialDecks, startTurnForPlayer } from '../../../game/cards.js';
 
 const schema = schemas[EVENTS.START];
 
 type StartLobbyInput = z.infer<typeof schema>;
 
-export const handleStartLobby: EventHandler<StartLobbyInput> = async (context, input) => {
+type StartLobbyContextData = {
+  lobby: LobbyState;
+  release: () => void;
+};
+
+type StartLobbyContext = HandlerContext & { [startLobbyContextKey]?: StartLobbyContextData };
+
+const startLobbyContextKey = Symbol('startLobbyContext');
+
+const setStartLobbyContext = (context: HandlerContext, data: StartLobbyContextData) => {
+  (context as StartLobbyContext)[startLobbyContextKey] = data;
+};
+
+const getStartLobbyContext = (context: HandlerContext) => {
+  const data = (context as StartLobbyContext)[startLobbyContextKey];
+  if (!data) {
+    throw new ApplicationError('PREPROCESS_REQUIRED', 'Missing start lobby pre-processing context');
+  }
+  return data;
+};
+
+const clearStartLobbyContext = (context: HandlerContext) => {
+  delete (context as StartLobbyContext)[startLobbyContextKey];
+};
+
+export const preProcessStartLobby = async (context: HandlerContext, input: StartLobbyInput) => {
   const lobby = context.store.get(input.lobbyId);
   if (!lobby) {
     throw new ApplicationError('NOT_FOUND', 'Lobby not found');
   }
 
-  await lobby.mutex.runExclusive(async () => {
+  const release = await lobby.mutex.acquire();
+  try {
     if (lobby.players.length < LOBBY_CAPACITY) {
       throw new ApplicationError('NOT_READY', 'Need 2 players to start');
     }
+
+    setStartLobbyContext(context, { lobby, release });
+  } catch (error) {
+    release();
+    throw error;
+  }
+};
+
+export const handleStartLobby: EventHandler<StartLobbyInput> = async (context, input) => {
+  const { lobby, release } = getStartLobbyContext(context);
+
+  try {
 
     lobby.meta.status = 'started';
     if (!lobby.currentPlayerSid) {
@@ -45,12 +83,16 @@ export const handleStartLobby: EventHandler<StartLobbyInput> = async (context, i
     });
 
     await context.broadcastState(lobby);
-  });
+  } finally {
+    release();
+    clearStartLobbyContext(context);
+  }
 };
 
 export const startLobbyDefinition = {
   event: EVENTS.START,
   schema,
   useRateLimit: true,
+  preProcess: preProcessStartLobby,
   handler: handleStartLobby,
 } as const;

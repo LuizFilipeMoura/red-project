@@ -1,7 +1,7 @@
 import { EVENTS, LOBBY_CAPACITY, makeMsg, paginationSchema } from '@repo/shared';
 import type { z } from 'zod';
-import type { EventHandler } from '../types.js';
-import { toLobby } from '../../state.js';
+import type { EventHandler } from '../../types.js';
+import { toLobby } from '../../../state.js';
 
 const schema = paginationSchema;
 

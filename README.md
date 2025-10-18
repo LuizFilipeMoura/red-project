@@ -83,7 +83,6 @@ The socket issues a signed `sid` cookie (`HttpOnly`, `SameSite=Lax`, `secure` in
 | `lobby:join`       | client → server  | `{ lobbyId, password? }`                                                      |
 | `lobby:leave`      | client → server  | `{ lobbyId }`                                                                 |
 | `lobby:start`      | client → server  | `{ lobbyId }`                                                                 |
-| `turn:pass`        | client → server  | `{ lobbyId }` – passes turn (internally delegates to `game:endTurn`)          |
 | `card:playUnit`    | client → server  | `{ lobbyId, cardId, x, y }` – summons a unit card on the owner's half         |
 | `card:playSpell`   | client → server  | `{ lobbyId, cardId, anchorX, anchorY }` – resolves spell area effects        |
 | `card:playTalent`  | client → server  | `{ lobbyId, cardId, targetX, targetY }` – fires an expiring per-unit talent  |

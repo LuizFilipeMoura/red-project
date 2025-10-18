@@ -12,7 +12,6 @@ export const EVENTS = {
   JOIN: 'lobby:join',
   LEAVE: 'lobby:leave',
   START: 'lobby:start',
-  TURN_PASS: 'turn:pass',
   STATE_SYNC: 'state:sync',
   ERROR: 'error',
   CARD_PLAY_UNIT: 'card:playUnit',

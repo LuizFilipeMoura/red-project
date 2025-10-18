@@ -1,9 +1,9 @@
 import { Mutex } from 'async-mutex';
 import { EVENTS, LOBBY_CAPACITY, schemas } from '@repo/shared';
 import type { z } from 'zod';
-import { createLobbyRow, type LobbyState, type PlayerState } from '../../state.js';
-import { hashPassword } from '../../security.js';
-import type { EventHandler } from '../types.js';
+import { createLobbyRow, type LobbyState, type PlayerState } from '../../../state.js';
+import { hashPassword } from '../../../security.js';
+import type { EventHandler } from '../../types.js';
 
 const schema = schemas[EVENTS.CREATE];
 

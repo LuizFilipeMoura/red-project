@@ -119,10 +119,6 @@ export function startLobby(lobbyId: string) {
   socketClient.emit(EVENTS.START, { lobbyId });
 }
 
-export function passTurn(lobbyId: string) {
-  socketClient.emit(EVENTS.TURN_PASS, { lobbyId });
-}
-
 export function moveUnit(payload: MoveUnitPayload) {
   socketClient.emit(EVENTS.GAME_MOVE_UNIT, payload);
 }

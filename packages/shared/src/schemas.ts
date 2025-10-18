@@ -218,9 +218,6 @@ export const requestSchemas = {
   'lobby:start': z.object({
     lobbyId: lobbyIdSchema,
   }),
-  'turn:pass': z.object({
-    lobbyId: lobbyIdSchema,
-  }),
   [EVENTS.GAME_MOVE_UNIT]: moveUnitSchema,
   [EVENTS.GAME_END_TURN]: endTurnSchema,
   [EVENTS.CARD_PLAY_UNIT]: playUnitCardSchema,
@@ -243,9 +240,6 @@ export const schemas = {
     lobbyId: lobbyIdSchema,
   }),
   'lobby:start': z.object({
-    lobbyId: lobbyIdSchema,
-  }),
-  'turn:pass': z.object({
     lobbyId: lobbyIdSchema,
   }),
   'state:sync': stateSyncSchema,
