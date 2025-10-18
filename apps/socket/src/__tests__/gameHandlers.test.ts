@@ -162,11 +162,65 @@ describe('game:moveUnit', () => {
     await preProcessMoveUnit(context, payload);
     await handleMoveUnit(context, payload);
     expect(unit).toMatchObject({ x: 7, y: 7 });
+    expect(unit.canMoveAtTurn).toBe(lobby.match!.turnNumber + 1);
     expect(lobby.match!.winnerSid).toBe(lobby.currentPlayerSid);
     expect(context.broadcastState).toHaveBeenCalledWith(lobby, {
       type: EVENTS.GAME_MOVE_UNIT,
       payload,
     });
+  });
+
+  it('prevents moving the same unit twice in the same turn', async () => {
+    const lobby = createLobbyState();
+    const unit = {
+      id: 'u3',
+      type: 'Warrior' as const,
+      owner: lobby.currentPlayerSid!,
+      x: 0,
+      y: 0,
+      canMoveAtTurn: lobby.match!.turnNumber,
+    };
+    lobby.match!.units.push(unit);
+    const context = createContext(lobby, lobby.currentPlayerSid!);
+
+    const firstMove = { lobbyId: lobby.meta.id, unitId: unit.id, toX: 1, toY: 0 };
+    await preProcessMoveUnit(context, firstMove);
+    await handleMoveUnit(context, firstMove);
+
+    await expect(
+      preProcessMoveUnit(context, {
+        lobbyId: lobby.meta.id,
+        unitId: unit.id,
+        toX: 1,
+        toY: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'UNIT_NOT_READY' } as Partial<ApplicationError>);
+  });
+
+  it('awards victory when an opponent unit occupies your flag', async () => {
+    const lobby = createLobbyState();
+    lobby.currentPlayerSid = 'player-b';
+    lobby.match!.currentPlayerSid = 'player-b';
+    lobby.match!.mana['player-b'] = MANA_PER_TURN;
+    lobby.match!.mana['player-a'] = 0;
+
+    const unit = {
+      id: 'u4',
+      type: 'Warrior' as const,
+      owner: 'player-b',
+      x: 1,
+      y: 0,
+      canMoveAtTurn: lobby.match!.turnNumber,
+    };
+    lobby.match!.units.push(unit);
+    const context = createContext(lobby, 'player-b');
+
+    const payload = { lobbyId: lobby.meta.id, unitId: unit.id, toX: 0, toY: 0 };
+    await preProcessMoveUnit(context, payload);
+    await handleMoveUnit(context, payload);
+
+    expect(lobby.match!.winnerSid).toBe('player-b');
+    expect(lobby.meta.status).toBe('finished');
   });
 });
 
