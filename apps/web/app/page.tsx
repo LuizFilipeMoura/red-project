@@ -37,6 +37,7 @@ export default function HomePage() {
 
   useEffect(() => {
     const unsubList = socketClient.on<LobbyListPayload>('lobby:list', (payload) => {
+      console.log('Received lobby list:', payload);
       setLobbies(payload);
     });
     const unsubSync = socketClient.on<StateSync>('state:sync', (payload) => {
@@ -88,7 +89,7 @@ export default function HomePage() {
           <CardHeader>
             <CardTitle>Public rooms</CardTitle>
             <CardDescription>
-              Showing {lobbies.items.length} of {lobbies.total} open slots.
+              Showing {lobbies.items?.length} of {lobbies.total} open slots.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -102,7 +103,7 @@ export default function HomePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {lobbies.items.length === 0 && (
+                {lobbies.items?.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center text-muted-foreground">
                       No public lobbies yet. Create one!

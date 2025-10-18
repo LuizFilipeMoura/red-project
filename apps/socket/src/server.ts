@@ -23,7 +23,7 @@ import {
   clearLobbyTimeout as clearLobbyTimeoutForStore,
 } from './state.js';
 import { registerHandlers } from './application/registry.js';
-import { handlerDefinitions } from './application/handlers/index.js';
+import { handlerDefinitions } from './application/handlers';
 import { prisma } from '@repo/db';
 import type { LobbyState, PlayerState } from './state.js';
 
@@ -44,7 +44,7 @@ const io = new Server(httpServer, {
   transports: ['polling', 'websocket'],
 });
 
-const signSid = (sid: string) => 's:' + signature.sign(sid, env.COOKIE_SECRET);
+const signSid = (sid: string | false) => 's:' + signature.sign(sid, env.COOKIE_SECRET);
 const unsignSid = (signed: string | undefined | null) => {
   if (!signed) return null;
   if (!signed.startsWith('s:')) return null;
@@ -54,7 +54,7 @@ const unsignSid = (signed: string | undefined | null) => {
 
 const issueSid = () => randomBytes(16).toString('hex');
 
-io.engine.use((req, res, next) => {
+io.engine.use((req: { headers: { cookie: any; }; }, res: { setHeader: (arg0: string, arg1: string) => void; }, next: () => void) => {
   const cookies = cookie.parse(req.headers.cookie ?? '');
   const existing = unsignSid(cookies[COOKIE_NAME]);
   const sid = existing ?? issueSid();
