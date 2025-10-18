@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import cookie from 'cookie';
 import signature from 'cookie-signature';
 import { Server, type Socket } from 'socket.io';
@@ -10,22 +10,20 @@ import { logger } from './logger.js';
 import {
   COOKIE_NAME,
   EVENTS,
-  LOBBY_CAPACITY,
   LOBBY_RETENTION_MS,
   LOBBY_ROOM,
   makeMsg,
-  paginationSchema,
-  lobbyIdSchema,
   schemas,
 } from '@repo/shared';
 import {
   createLobbyStore,
   toLobby,
-  createLobbyRow,
   persistSnapshot,
   attachTimeout,
-  clearLobbyTimeout,
+  clearLobbyTimeout as clearLobbyTimeoutForStore,
 } from './state.js';
+import { registerHandlers } from './application/registry.js';
+import { handlerDefinitions } from './application/handlers/index.js';
 import { prisma } from '@repo/db';
 import type { LobbyState, PlayerState } from './state.js';
 
@@ -94,21 +92,6 @@ const checkRateLimit = (socket: Socket, event: string) => {
   bucket.timestamps.push(now);
   rateLimits.set(key, bucket);
   return true;
-};
-
-const hashPassword = (password: string) => {
-  const salt = randomBytes(16).toString('hex');
-  const hash = scryptSync(password, salt, 64).toString('hex');
-  return `${salt}:${hash}`;
-};
-
-const verifyPassword = (stored: string | null, password: string | undefined) => {
-  if (!stored) return true;
-  if (!password) return false;
-  const [salt, hash] = stored.split(':');
-  const derived = scryptSync(password, salt, 64);
-  const expected = Buffer.from(hash, 'hex');
-  return timingSafeEqual(derived, expected);
 };
 
 const parsePayload = <T>(event: keyof typeof schemas, payload: unknown, schema: z.ZodType<T>) => {
@@ -208,7 +191,7 @@ const pruneEmptyLobbies = async () => {
     if (lobby.players.length === 0) {
       const lastSeen = lobby.deadlineAt ?? lobby.meta.createdAt.getTime() ?? now;
       if (now - lastSeen > LOBBY_RETENTION_MS) {
-        clearLobbyTimeout(store, id);
+        clearLobbyTimeoutForStore(store, id);
         store.delete(id);
         await db.lobby.delete({ where: { id } });
         logger.info({ lobbyId: id }, 'Removed empty lobby');
@@ -237,227 +220,24 @@ gameNs.on('connection', (socket) => {
     socket.emit(EVENTS.ERROR, makeMsg(EVENTS.ERROR, { code, message }));
   };
 
-  const joinLobbyRoom = (lobbyId: string) => socket.join(LOBBY_ROOM(lobbyId));
-
-  socket.on(EVENTS.CREATE, async (payload) => {
-    try {
-      if (!checkRateLimit(socket, EVENTS.CREATE)) {
-        return emitError('RATE_LIMIT', 'Too many requests');
-      }
-      const input = parsePayload(EVENTS.CREATE, payload, schemas[EVENTS.CREATE]);
-      const lobbyRow = createLobbyRow({
-        name: input.name,
-        ownerSid: sid,
-        isPrivate: input.isPrivate ?? Boolean(input.password),
-        passwordHash: input.password ? hashPassword(input.password) : null,
-      });
-      await db.lobby.create({ data: lobbyRow });
-      const playerInsert = {
-        lobbyId: lobbyRow.id,
-        sid,
-        joinedAt: new Date(),
-        isReady: false,
-      };
-      const inserted = await db.player.create({ data: playerInsert });
-      const playerState: PlayerState = {
-        lobbyId: playerInsert.lobbyId,
-        sid: playerInsert.sid,
-        joinedAt: playerInsert.joinedAt.getTime(),
-        isReady: playerInsert.isReady,
-        id: inserted.id,
-      };
-      const lobbyState: LobbyState = {
-        meta: lobbyRow,
-        players: [playerState],
-        currentPlayerSid: null,
-        turnNumber: 0,
-        deadlineAt: null,
-        mutex: new Mutex(),
-      };
-      store.set(lobbyRow.id, lobbyState);
-      joinLobbyRoom(lobbyRow.id);
-      await broadcastState(lobbyState);
-    } catch (error) {
-      logger.error({ err: error, event: EVENTS.CREATE, sid }, 'Failed to create lobby');
-      emitError('VALIDATION', error instanceof Error ? error.message : 'Invalid payload');
-    }
-  });
-
-  socket.on(EVENTS.LIST, async (payload) => {
-    try {
-      if (!checkRateLimit(socket, EVENTS.LIST)) {
-        return emitError('RATE_LIMIT', 'Too many requests');
-      }
-      const input = parsePayload(EVENTS.LIST, payload, paginationSchema);
-      const lobbiesArray = Array.from(store.values())
-        .filter((lobby) => !lobby.meta.isPrivate)
-        .filter((lobby) => lobby.players.length < LOBBY_CAPACITY)
-        .sort((a, b) => (a.meta.createdAt ?? 0) - (b.meta.createdAt ?? 0));
-      const total = lobbiesArray.length;
-      const start = (input.page - 1) * input.pageSize;
-      const end = start + input.pageSize;
-      const pageItems = lobbiesArray.slice(start, end).map((lobby) => toLobby(lobby));
-      socket.emit(
-        EVENTS.LIST,
-        makeMsg(EVENTS.LIST, { items: pageItems, page: input.page, total }),
-      );
-    } catch (error) {
-      emitError('VALIDATION', error instanceof Error ? error.message : 'Invalid payload');
-    }
-  });
-
-  socket.on(EVENTS.JOIN, async (payload) => {
-    try {
-      if (!checkRateLimit(socket, EVENTS.JOIN)) {
-        return emitError('RATE_LIMIT', 'Too many requests');
-      }
-      const input = parsePayload(
-        EVENTS.JOIN,
-        payload,
-        schemas[EVENTS.JOIN],
-      );
-      const lobby = store.get(input.lobbyId);
-      if (!lobby) {
-        return emitError('NOT_FOUND', 'Lobby not found');
-      }
-      await lobby.mutex.runExclusive(async () => {
-        if (lobby.players.some((player) => player.sid === sid)) {
-          joinLobbyRoom(lobby.meta.id);
-          return;
-        }
-        if (lobby.players.length >= LOBBY_CAPACITY) {
-          return emitError('FULL', 'Lobby is full');
-        }
-        if (!verifyPassword(lobby.meta.passwordHash ?? null, input.password)) {
-          return emitError('PASSWORD', 'Invalid password');
-        }
-        const playerInsert = {
-          lobbyId: lobby.meta.id,
-          sid,
-          joinedAt: new Date(),
-          isReady: false,
-        };
-        const inserted = await db.player.create({ data: playerInsert });
-        lobby.players.push({
-          lobbyId: playerInsert.lobbyId,
-          sid: playerInsert.sid,
-          joinedAt: playerInsert.joinedAt.getTime(),
-          isReady: playerInsert.isReady,
-          id: inserted.id,
-        });
-        joinLobbyRoom(lobby.meta.id);
-        if (lobby.players.length === LOBBY_CAPACITY) {
-          const first = lobby.players[Math.floor(Math.random() * lobby.players.length)];
-          lobby.currentPlayerSid = first.sid;
-          lobby.turnNumber = 1;
-          lobby.meta.status = 'started';
-          await db.lobby.update({
-            where: { id: lobby.meta.id },
-            data: { status: lobby.meta.status },
-          });
-          scheduleTurnTimeout(lobby);
-        }
-        await broadcastState(lobby);
-      });
-    } catch (error) {
-      emitError('VALIDATION', error instanceof Error ? error.message : 'Invalid payload');
-    }
-  });
-
-  socket.on(EVENTS.LEAVE, async (payload) => {
-    try {
-      if (!checkRateLimit(socket, EVENTS.LEAVE)) {
-        return emitError('RATE_LIMIT', 'Too many requests');
-      }
-      const input = parsePayload(EVENTS.LEAVE, payload, schemas[EVENTS.LEAVE]);
-      const lobby = store.get(input.lobbyId);
-      if (!lobby) return;
-      await lobby.mutex.runExclusive(async () => {
-        const index = lobby.players.findIndex((player) => player.sid === sid);
-        if (index >= 0) {
-          lobby.players.splice(index, 1);
-          await db.player.deleteMany({
-            where: {
-              lobbyId: lobby.meta.id,
-              sid,
-            },
-          });
-          socket.leave(LOBBY_ROOM(lobby.meta.id));
-          if (lobby.players.length === 0) {
-            clearLobbyTimeout(store, lobby.meta.id);
-            lobby.currentPlayerSid = null;
-            lobby.deadlineAt = null;
-          }
-          lobby.meta.status = 'waiting';
-          await db.lobby.update({
-            where: { id: lobby.meta.id },
-            data: { status: lobby.meta.status },
-          });
-          if (lobby.currentPlayerSid === sid) {
-            lobby.currentPlayerSid = lobby.players[0]?.sid ?? null;
-            if (lobby.currentPlayerSid) {
-              scheduleTurnTimeout(lobby);
-            }
-          }
-          await broadcastState(lobby);
-        }
-      });
-    } catch (error) {
-      emitError('VALIDATION', error instanceof Error ? error.message : 'Invalid payload');
-    }
-  });
-
-  socket.on(EVENTS.START, async (payload) => {
-    try {
-      if (!checkRateLimit(socket, EVENTS.START)) {
-        return emitError('RATE_LIMIT', 'Too many requests');
-      }
-      const input = parsePayload(EVENTS.START, payload, schemas[EVENTS.START]);
-      const lobby = store.get(input.lobbyId);
-      if (!lobby) return emitError('NOT_FOUND', 'Lobby not found');
-      await lobby.mutex.runExclusive(async () => {
-        if (lobby.players.length < LOBBY_CAPACITY) {
-          return emitError('NOT_READY', 'Need 2 players to start');
-        }
-        lobby.meta.status = 'started';
-        if (!lobby.currentPlayerSid) {
-          lobby.currentPlayerSid = lobby.players[0]?.sid ?? null;
-        }
-        await db
-          .update(lobbies)
-          .set({ status: lobby.meta.status })
-          .where(eq(lobbies.id, lobby.meta.id));
-        scheduleTurnTimeout(lobby);
-        await broadcastState(lobby);
-      });
-    } catch (error) {
-      emitError('VALIDATION', error instanceof Error ? error.message : 'Invalid payload');
-    }
-  });
-
-  socket.on(EVENTS.TURN_PASS, async (payload) => {
-    try {
-      if (!checkRateLimit(socket, EVENTS.TURN_PASS)) {
-        return emitError('RATE_LIMIT', 'Too many requests');
-      }
-      const input = parsePayload(EVENTS.TURN_PASS, payload, schemas[EVENTS.TURN_PASS]);
-      const lobby = store.get(input.lobbyId);
-      if (!lobby) return emitError('NOT_FOUND', 'Lobby not found');
-      await lobby.mutex.runExclusive(async () => {
-        if (lobby.currentPlayerSid !== sid) {
-          return emitError('TURN', 'Not your turn');
-        }
-        const other = lobby.players.find((player) => player.sid !== sid);
-        if (!other) return;
-        lobby.currentPlayerSid = other.sid;
-        lobby.turnNumber += 1;
-        scheduleTurnTimeout(lobby);
-        await broadcastState(lobby);
-      });
-    } catch (error) {
-      emitError('VALIDATION', error instanceof Error ? error.message : 'Invalid payload');
-    }
-  });
+  registerHandlers(
+    {
+      db,
+      store,
+      socket,
+      sid,
+      logger,
+      emitError,
+      joinLobbyRoom: (lobbyId: string) => socket.join(LOBBY_ROOM(lobbyId)),
+      leaveLobbyRoom: (lobbyId: string) => socket.leave(LOBBY_ROOM(lobbyId)),
+      broadcastState,
+      scheduleTurnTimeout,
+      clearLobbyTimeout: (lobbyId: string) => clearLobbyTimeoutForStore(store, lobbyId),
+      checkRateLimit: (event: string) => checkRateLimit(socket, event),
+      parsePayload,
+    },
+    handlerDefinitions,
+  );
 
   socket.on('disconnect', () => {
     logger.info({ sid }, 'Socket disconnected');
