@@ -1,7 +1,7 @@
 import { EVENTS, LOBBY_CAPACITY, schemas } from '@repo/shared';
 import type { z } from 'zod';
 import { ApplicationError } from '../errors.js';
-import type { EventHandler } from '../types.js';
+import type { EventHandler, HandlerContext } from '../types.js';
 import { verifyPassword } from '../../security.js';
 import type { PlayerState } from '../../state.js';
 
@@ -64,9 +64,27 @@ export const handleJoinLobby: EventHandler<JoinLobbyInput> = async (context, inp
   });
 };
 
+// Post-process: Send delayed state syncs to ensure client receives the update
+const postProcessJoinLobby = async (context: HandlerContext, input: JoinLobbyInput) => {
+  const lobby = context.store.get(input.lobbyId);
+  if (!lobby) return;
+
+  // Broadcast state again after 100ms and 1000ms to ensure client receives it
+  setTimeout(async () => {
+    context.logger.info({ lobbyId: input.lobbyId }, 'Delayed state sync after 100ms');
+    await context.broadcastState(lobby);
+  }, 100);
+
+  setTimeout(async () => {
+    context.logger.info({ lobbyId: input.lobbyId }, 'Delayed state sync after 1000ms');
+    await context.broadcastState(lobby);
+  }, 1000);
+};
+
 export const joinLobbyDefinition = {
   event: EVENTS.JOIN,
   schema,
   useRateLimit: true,
   handler: handleJoinLobby,
+  postProcess: postProcessJoinLobby,
 } as const;

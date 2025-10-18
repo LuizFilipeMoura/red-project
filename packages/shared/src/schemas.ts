@@ -60,13 +60,37 @@ export const lobbyListResponseSchema = z.object({
   total: z.number().int().nonnegative(),
 });
 
+// Request schemas (for client -> server)
+export const requestSchemas = {
+  'lobby:create': z.object({
+    name: lobbyNameSchema,
+    password: z.string().optional(),
+    isPrivate: z.boolean().optional(),
+  }),
+  'lobby:list': paginationSchema,
+  'lobby:join': z.object({
+    lobbyId: lobbyIdSchema,
+    password: z.string().optional(),
+  }),
+  'lobby:leave': z.object({
+    lobbyId: lobbyIdSchema,
+  }),
+  'lobby:start': z.object({
+    lobbyId: lobbyIdSchema,
+  }),
+  'turn:pass': z.object({
+    lobbyId: lobbyIdSchema,
+  }),
+} satisfies Record<string, z.ZodTypeAny>;
+
+// Response schemas (for server -> client)
 export const schemas = {
   'lobby:create': z.object({
     name: lobbyNameSchema,
     password: z.string().optional(),
     isPrivate: z.boolean().optional(),
   }),
-  'lobby:list': z.union([paginationSchema, lobbyListResponseSchema]),
+  'lobby:list': lobbyListResponseSchema,
   'lobby:join': z.object({
     lobbyId: lobbyIdSchema,
     password: z.string().optional(),

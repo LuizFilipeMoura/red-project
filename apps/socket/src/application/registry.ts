@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { schemas } from '@repo/shared';
-import type { HandlerContext, EventHandler } from './types.js';
+import type { HandlerContext, EventHandler, PreProcessEvent, PostProcessEvent } from './types.js';
 import { ApplicationError } from './errors.js';
 
 export type HandlerDefinition = {
@@ -8,6 +8,8 @@ export type HandlerDefinition = {
   schema?: z.ZodTypeAny;
   useRateLimit?: boolean;
   handler: EventHandler<any>;
+  preProcess?: PreProcessEvent<any>['preProcess'];
+  postProcess?: PostProcessEvent<any>['postProcess'];
 };
 
 export const registerHandlers = (
@@ -23,7 +25,19 @@ export const registerHandlers = (
         const input = definition.schema
           ? context.parsePayload(definition.event, payload, definition.schema)
           : payload;
+
+        // Pre-process hook
+        if (definition.preProcess) {
+          await definition.preProcess(context, input);
+        }
+
+        // Main handler
         await definition.handler(context, input);
+
+        // Post-process hook
+        if (definition.postProcess) {
+          await definition.postProcess(context, input);
+        }
       } catch (error) {
         if (error instanceof ApplicationError) {
           context.emitError(error.code, error.message);

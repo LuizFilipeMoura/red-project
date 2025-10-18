@@ -6,6 +6,7 @@ import {
   EVENTS,
   makeMsg,
   schemas,
+  requestSchemas,
   type Lobby,
   type LobbyListPayload,
   type ErrorPayload,
@@ -35,7 +36,9 @@ class SocketManager {
       if (!isEventKey(event)) return;
       try {
         const schema = schemas[event];
+        console.log('Raw socket message:', event, message);
         const payload = this.parseMessage(event, message, schema);
+        console.log('Parsed payload:', event, payload);
         this.handlers[event]?.forEach((handler) => handler(payload));
       } catch (error) {
         console.error('Socket payload parse failed', event, error);
@@ -61,7 +64,9 @@ class SocketManager {
     if (!isEventKey(event)) {
       throw new Error(`Unknown event ${event}`);
     }
-    const data = schemas[event].parse(payload);
+    // Use requestSchemas for outgoing messages
+    const requestSchema = (requestSchemas as any)[event];
+    const data = requestSchema ? requestSchema.parse(payload) : payload;
     socket.emit(event, makeMsg(event, data as never));
   }
 

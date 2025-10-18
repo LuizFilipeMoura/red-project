@@ -21,3 +21,15 @@ export type HandlerContext = {
 };
 
 export type EventHandler<TInput> = (context: HandlerContext, input: TInput) => Promise<void>;
+
+export interface PreProcessEvent<TInput = unknown> {
+  preProcess?: (context: HandlerContext, input: TInput) => Promise<void> | void;
+}
+
+export interface PostProcessEvent<TInput = unknown> {
+  postProcess?: (context: HandlerContext, input: TInput) => Promise<void> | void;
+}
+
+export interface EventLifecycle<TInput = unknown> extends PreProcessEvent<TInput>, PostProcessEvent<TInput> {
+  handler: EventHandler<TInput>;
+}

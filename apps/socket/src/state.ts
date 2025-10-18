@@ -115,7 +115,7 @@ export const attachTimeout = (
   if (!lobby.currentPlayerSid) return;
   const timeoutDuration = Math.max(duration, 0);
   lobby.deadlineAt = Date.now() + timeoutDuration;
-  lobby.timeout = setTimeout(() => onTimeout(lobby), timeoutDuration);
+  // lobby.timeout = setTimeout(() => onTimeout(lobby), timeoutDuration);
 };
 
 export const clearLobbyTimeout = (store: LobbyStore, lobbyId: string) => {
