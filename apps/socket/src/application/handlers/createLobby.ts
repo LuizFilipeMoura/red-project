@@ -1,7 +1,6 @@
 import { Mutex } from 'async-mutex';
 import { EVENTS, LOBBY_CAPACITY, schemas } from '@repo/shared';
 import type { z } from 'zod';
-import { lobbies, players } from '@repo/db';
 import { createLobbyRow, type LobbyState, type PlayerState } from '../../state.js';
 import { hashPassword } from '../../security.js';
 import type { EventHandler } from '../types.js';
@@ -19,19 +18,29 @@ export const handleCreateLobby: EventHandler<CreateLobbyInput> = async (context,
     capacity: LOBBY_CAPACITY,
   });
 
-  await context.db.insert(lobbies).values(lobbyRow).run();
+  await context.db.lobby.create({
+    data: {
+      id: lobbyRow.id,
+      name: lobbyRow.name,
+      isPrivate: lobbyRow.isPrivate,
+      passwordHash: lobbyRow.passwordHash,
+      capacity: lobbyRow.capacity,
+      ownerSid: lobbyRow.ownerSid,
+      createdAt: new Date(lobbyRow.createdAt),
+      status: lobbyRow.status,
+    },
+  });
 
   const joinedAt = Date.now();
-  const [inserted] = await context.db
-    .insert(players)
-    .values({
+  const inserted = await context.db.player.create({
+    data: {
       lobbyId: lobbyRow.id,
       sid: context.sid,
-      joinedAt,
+      joinedAt: new Date(joinedAt),
       isReady: false,
-    })
-    .returning({ id: players.id })
-    .execute();
+    },
+    select: { id: true },
+  });
 
   const playerState: PlayerState = {
     lobbyId: lobbyRow.id,

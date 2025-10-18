@@ -1,6 +1,6 @@
 # Turborepo Phaser Turn-Based Demo
 
-A pnpm + Turborepo monorepo that wires together a Next.js 15 client (with Phaser 3), a Socket.IO authoritative server, and shared TypeScript packages. Anonymous players can create and join two-player lobbies, take alternating turns with a 10 second timeout, and persist lobby snapshots to SQLite via Drizzle ORM.
+A pnpm + Turborepo monorepo that wires together a Next.js 15 client (with Phaser 3), a Socket.IO authoritative server, and shared TypeScript packages. Anonymous players can create and join two-player lobbies, take alternating turns with a 10 second timeout, and persist lobby snapshots to SQLite via Prisma.
 
 ## Tech stack
 
@@ -9,7 +9,7 @@ A pnpm + Turborepo monorepo that wires together a Next.js 15 client (with Phaser
   - `apps/socket` – Node Socket.IO server with per-lobby mutexes and pino logging
 - **Packages**
   - `packages/shared` – Zod schemas, protocol helpers, constants
-  - `packages/db` – Drizzle ORM + SQLite schema, migrations, helpers
+  - `packages/db` – Prisma Client + SQLite schema and helpers
 - Tooling: Turborepo, pnpm, ESLint, Prettier, Jest, Husky + lint-staged
 
 ## Quick architecture
@@ -29,7 +29,7 @@ A pnpm + Turborepo monorepo that wires together a Next.js 15 client (with Phaser
 
 ```bash
 pnpm install
-pnpm migrate # generates + runs drizzle migrations (sqlite.db)
+pnpm migrate # runs Prisma migrations via @repo/db
 ```
 
 ### Development
@@ -88,7 +88,7 @@ The socket issues a signed `sid` cookie (`HttpOnly`, `SameSite=Lax`, `secure` in
 - Newly summoned units suffer **summoning sickness** and cannot move until the next turn.
 - Movement uses Manhattan distance and is capped per type: Mage (2), Warrior (1), Archer (3). Units may pass through others but cannot end on an occupied cell or remain still.
 - Reaching the opponent’s flag instantly wins the match. There is no combat in this MVP.
-- The socket server is fully authoritative: every placement, move, and turn end is validated under a per-lobby mutex before persisting to SQLite via Drizzle.
+- The socket server is fully authoritative: every placement, move, and turn end is validated under a per-lobby mutex before persisting to SQLite via Prisma.
 - Empty lobbies are reaped after 5 minutes, and snapshots are restored on boot so matches survive restarts.
 
 ### Manual test flow
@@ -111,7 +111,7 @@ The socket issues a signed `sid` cookie (`HttpOnly`, `SameSite=Lax`, `secure` in
 | `pnpm test`   | Run Jest suites (reducers/state helpers)          |
 | `pnpm lint`   | Lint all packages with ESLint                     |
 | `pnpm typecheck` | Type-check using project references            |
-| `pnpm migrate`   | Generate and apply Drizzle migrations          |
+| `pnpm migrate`   | Apply Prisma migrations                        |
 
 ## License
 

@@ -1,7 +1,5 @@
-import { eq } from 'drizzle-orm';
 import { EVENTS, LOBBY_CAPACITY, schemas } from '@repo/shared';
 import type { z } from 'zod';
-import { lobbies as lobbiesTable } from '@repo/db';
 import { ApplicationError } from '../errors.js';
 import type { EventHandler } from '../types.js';
 import { initializeMatchState } from '../../state.js';
@@ -33,11 +31,10 @@ export const handleStartLobby: EventHandler<StartLobbyInput> = async (context, i
       lobby.currentPlayerSid = lobby.match.currentPlayerSid;
     }
 
-    await context.db
-      .update(lobbiesTable)
-      .set({ status: lobby.meta.status })
-      .where(eq(lobbiesTable.id, lobby.meta.id))
-      .run();
+    await context.db.lobby.update({
+      where: { id: lobby.meta.id },
+      data: { status: lobby.meta.status },
+    });
 
     await context.broadcastState(lobby);
   });

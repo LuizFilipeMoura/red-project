@@ -1,7 +1,5 @@
-import { and, eq } from 'drizzle-orm';
 import { EVENTS, LOBBY_CAPACITY, schemas } from '@repo/shared';
 import type { z } from 'zod';
-import { players, lobbies as lobbiesTable, matches as matchesTable } from '@repo/db';
 import type { EventHandler } from '../types.js';
 
 const schema = schemas[EVENTS.LEAVE];
@@ -17,10 +15,9 @@ export const handleLeaveLobby: EventHandler<LeaveLobbyInput> = async (context, i
     if (index < 0) return;
 
     lobby.players.splice(index, 1);
-    await context.db
-      .delete(players)
-      .where(and(eq(players.lobbyId, lobby.meta.id), eq(players.sid, context.sid)))
-      .run();
+    await context.db.player.deleteMany({
+      where: { lobbyId: lobby.meta.id, sid: context.sid },
+    });
 
     await context.leaveLobbyRoom(lobby.meta.id);
 
@@ -30,7 +27,7 @@ export const handleLeaveLobby: EventHandler<LeaveLobbyInput> = async (context, i
       lobby.turnNumber = 0;
       lobby.deadlineAt = null;
       lobby.match = null;
-      await context.db.delete(matchesTable).where(eq(matchesTable.id, lobby.meta.id)).run();
+      await context.db.match.deleteMany({ where: { id: lobby.meta.id } });
     } else if (lobby.players.length < LOBBY_CAPACITY) {
       lobby.match = null;
       lobby.currentPlayerSid = lobby.players[0]?.sid ?? null;
@@ -38,11 +35,10 @@ export const handleLeaveLobby: EventHandler<LeaveLobbyInput> = async (context, i
     }
 
     lobby.meta.status = 'waiting';
-    await context.db
-      .update(lobbiesTable)
-      .set({ status: lobby.meta.status })
-      .where(eq(lobbiesTable.id, lobby.meta.id))
-      .run();
+    await context.db.lobby.update({
+      where: { id: lobby.meta.id },
+      data: { status: lobby.meta.status },
+    });
 
     if (lobby.currentPlayerSid === context.sid) {
       lobby.currentPlayerSid = lobby.players[0]?.sid ?? null;

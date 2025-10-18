@@ -1,10 +1,10 @@
 import type { Socket } from 'socket.io';
 import type { z } from 'zod';
 import type { Logger } from 'pino';
-import type { db } from '@repo/db';
+import type { PrismaClient } from '@repo/db';
 import type { LobbyState, LobbyStore } from '../state.js';
 
-export type DbClient = typeof db;
+export type DbClient = PrismaClient;
 
 export type HandlerContext = {
   db: DbClient;

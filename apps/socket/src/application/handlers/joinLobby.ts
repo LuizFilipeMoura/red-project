@@ -1,7 +1,5 @@
 import { EVENTS, LOBBY_CAPACITY, schemas } from '@repo/shared';
 import type { z } from 'zod';
-import { players, lobbies as lobbiesTable } from '@repo/db';
-import { eq } from 'drizzle-orm';
 import { ApplicationError } from '../errors.js';
 import type { EventHandler, HandlerContext } from '../types.js';
 import { verifyPassword } from '../../security.js';
@@ -32,16 +30,15 @@ export const handleJoinLobby: EventHandler<JoinLobbyInput> = async (context, inp
     }
 
     const joinedAt = Date.now();
-    const [inserted] = await context.db
-      .insert(players)
-      .values({
+    const inserted = await context.db.player.create({
+      data: {
         lobbyId: lobby.meta.id,
         sid: context.sid,
-        joinedAt,
+        joinedAt: new Date(joinedAt),
         isReady: false,
-      })
-      .returning({ id: players.id })
-      .execute();
+      },
+      select: { id: true },
+    });
 
     const playerState: PlayerState = {
       lobbyId: lobby.meta.id,
@@ -62,11 +59,10 @@ export const handleJoinLobby: EventHandler<JoinLobbyInput> = async (context, inp
         lobby.turnNumber = 1;
         lobby.meta.status = 'started';
         lobby.match = initializeMatchState(lobby, [first.sid, second.sid]);
-        await context.db
-          .update(lobbiesTable)
-          .set({ status: lobby.meta.status })
-          .where(eq(lobbiesTable.id, lobby.meta.id))
-          .run();
+        await context.db.lobby.update({
+          where: { id: lobby.meta.id },
+          data: { status: lobby.meta.status },
+        });
       }
     }
 

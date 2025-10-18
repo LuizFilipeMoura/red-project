@@ -20,7 +20,6 @@
     "cookie-signature": "^1.2.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "drizzle-orm": "^0.30.10",
     "nanoid": "^5.0.7",
     "pino": "^8.17.0",
     "pino-pretty": "^10.3.0",

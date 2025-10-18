@@ -23,10 +23,9 @@ import {
 } from './state.js';
 import { registerHandlers } from './application/registry.js';
 import { handlerDefinitions } from './application/handlers';
-import { db as database, lobbies as lobbiesTable } from '@repo/db';
+import { prisma as database } from '@repo/db';
 import type { LobbyState } from './state.js';
 import { hydrateLobbies } from './state.js';
-import { eq } from 'drizzle-orm';
 
 const db = database;
 const store = createLobbyStore();
@@ -142,11 +141,11 @@ const pruneEmptyLobbies = async () => {
   const now = Date.now();
   for (const [id, lobby] of store) {
     if (lobby.players.length === 0) {
-      const lastSeen = lobby.deadlineAt ?? lobby.meta.createdAt.getTime() ?? now;
+      const lastSeen = lobby.deadlineAt ?? lobby.meta.createdAt ?? now;
       if (now - lastSeen > LOBBY_RETENTION_MS) {
         clearLobbyTimeoutForStore(store, id);
         store.delete(id);
-        await db.delete(lobbiesTable).where(eq(lobbiesTable.id, id)).run();
+        await db.lobby.deleteMany({ where: { id } });
         logger.info({ lobbyId: id }, 'Removed empty lobby');
       }
     }

@@ -9,7 +9,7 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "migrate": "pnpm --filter @repo/db drizzle-kit generate:sqlite && pnpm --filter @repo/db drizzle-kit up:sqlite"
+    "migrate": "pnpm --filter @repo/db db:migrate"
   },
   "devDependencies": {
     "@types/node": "^20.12.7",
