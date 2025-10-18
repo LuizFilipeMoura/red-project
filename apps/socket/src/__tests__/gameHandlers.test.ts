@@ -1,8 +1,8 @@
 import { jest } from '@jest/globals';
 import { EVENTS, MANA_PER_TURN } from '@repo/shared';
-import { handlePlaceUnit } from '../application/handlers/game/placeUnit.js';
-import { handleMoveUnit } from '../application/handlers/game/moveUnit.js';
-import { handleEndTurn } from '../application/handlers/game/endTurn.js';
+import { handlePlaceUnit, preProcessPlaceUnit } from '../application/handlers/game/placeUnit.js';
+import { handleMoveUnit, preProcessMoveUnit } from '../application/handlers/game/moveUnit.js';
+import { handleEndTurn, preProcessEndTurn } from '../application/handlers/game/endTurn.js';
 import { ApplicationError } from '../application/errors.js';
 import {
   createLobbyRow,
@@ -12,9 +12,41 @@ import {
 } from '../state.js';
 import type { HandlerContext } from '../application/types.js';
 
-const makeMutex = () => ({
-  runExclusive: async <T>(fn: () => Promise<T> | T) => fn(),
-});
+const makeMutex = () => {
+  let locked = false;
+  const queue: (() => void)[] = [];
+
+  const acquire = async () =>
+    new Promise<() => void>((resolve) => {
+      const tryAcquire = () => {
+        if (!locked) {
+          locked = true;
+          resolve(() => {
+            locked = false;
+            const next = queue.shift();
+            if (next) {
+              next();
+            }
+          });
+        } else {
+          queue.push(tryAcquire);
+        }
+      };
+      tryAcquire();
+    });
+
+  return {
+    acquire,
+    runExclusive: async <T>(fn: () => Promise<T> | T) => {
+      const release = await acquire();
+      try {
+        return await fn();
+      } finally {
+        release();
+      }
+    },
+  };
+};
 
 const createLobbyState = (id = 'lobby-1') => {
   const playerA = 'player-a';
@@ -61,7 +93,7 @@ describe('game:placeUnit', () => {
     lobby.match!.mana[lobby.currentPlayerSid!] = 1;
     const context = createContext(lobby, lobby.currentPlayerSid!);
     await expect(
-      handlePlaceUnit(context, {
+      preProcessPlaceUnit(context, {
         lobbyId: lobby.meta.id,
         type: 'Mage',
         x: 0,
@@ -74,6 +106,7 @@ describe('game:placeUnit', () => {
     const lobby = createLobbyState();
     const context = createContext(lobby, lobby.currentPlayerSid!);
     const payload = { lobbyId: lobby.meta.id, type: 'Warrior', x: 0, y: 0 } as const;
+    await preProcessPlaceUnit(context, payload);
     await handlePlaceUnit(context, payload);
     expect(lobby.match!.units).toHaveLength(1);
     expect(lobby.match!.units[0]).toMatchObject({
@@ -104,7 +137,7 @@ describe('game:moveUnit', () => {
     lobby.match!.units.push(unit);
     const context = createContext(lobby, lobby.currentPlayerSid!);
     await expect(
-      handleMoveUnit(context, {
+      preProcessMoveUnit(context, {
         lobbyId: lobby.meta.id,
         unitId: unit.id,
         toX: 1,
@@ -126,6 +159,7 @@ describe('game:moveUnit', () => {
     lobby.match!.units.push(unit);
     const context = createContext(lobby, lobby.currentPlayerSid!);
     const payload = { lobbyId: lobby.meta.id, unitId: unit.id, toX: 7, toY: 7 };
+    await preProcessMoveUnit(context, payload);
     await handleMoveUnit(context, payload);
     expect(unit).toMatchObject({ x: 7, y: 7 });
     expect(lobby.match!.winnerSid).toBe(lobby.currentPlayerSid);
@@ -140,7 +174,9 @@ describe('game:endTurn', () => {
   it('switches active player and refreshes mana', async () => {
     const lobby = createLobbyState();
     const context = createContext(lobby, lobby.currentPlayerSid!);
-    await handleEndTurn(context, { lobbyId: lobby.meta.id });
+    const payload = { lobbyId: lobby.meta.id } as const;
+    await preProcessEndTurn(context, payload);
+    await handleEndTurn(context, payload);
     expect(lobby.match!.currentPlayerSid).not.toBe(context.sid);
     expect(lobby.match!.turnNumber).toBe(2);
     const nextPlayer = lobby.match!.currentPlayerSid!;
@@ -155,7 +191,7 @@ describe('game:endTurn', () => {
   it('rejects when not current player', async () => {
     const lobby = createLobbyState();
     const context = createContext(lobby, 'player-b');
-    await expect(handleEndTurn(context, { lobbyId: lobby.meta.id })).rejects.toMatchObject({
+    await expect(preProcessEndTurn(context, { lobbyId: lobby.meta.id })).rejects.toMatchObject({
       code: 'NOT_YOUR_TURN',
     } as Partial<ApplicationError>);
   });

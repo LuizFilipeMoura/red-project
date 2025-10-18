@@ -1,6 +1,6 @@
 import { EVENTS, MOVE_RANGE, schemas, FLAG_A, FLAG_B } from '@repo/shared';
 import type { z } from 'zod';
-import type { EventHandler } from '../../types.js';
+import type { EventHandler, HandlerContext } from '../../types.js';
 import { ApplicationError } from '../../errors.js';
 import {
   getPlayerSide,
@@ -8,18 +8,50 @@ import {
   isOnBoard,
   manhattanDistance,
 } from '../../../game/rules.js';
+import type { LobbyState } from '../../../state.js';
 
 const schema = schemas[EVENTS.GAME_MOVE_UNIT];
 
 type MoveUnitInput = z.infer<typeof schema>;
 
-export const handleMoveUnit: EventHandler<MoveUnitInput> = async (context, input) => {
+type ActiveMatch = NonNullable<LobbyState['match']>;
+
+type MoveUnitContextData = {
+  lobby: LobbyState;
+  unit: ActiveMatch['units'][number];
+  target: { x: number; y: number };
+  targetFlag: typeof FLAG_A;
+  release: () => void;
+};
+
+type MoveUnitContext = HandlerContext & { [moveUnitContextKey]?: MoveUnitContextData };
+
+const moveUnitContextKey = Symbol('moveUnitContext');
+
+const setMoveUnitContext = (context: HandlerContext, data: MoveUnitContextData) => {
+  (context as MoveUnitContext)[moveUnitContextKey] = data;
+};
+
+const getMoveUnitContext = (context: HandlerContext) => {
+  const data = (context as MoveUnitContext)[moveUnitContextKey];
+  if (!data) {
+    throw new ApplicationError('PREPROCESS_REQUIRED', 'Missing move unit pre-processing context');
+  }
+  return data;
+};
+
+const clearMoveUnitContext = (context: HandlerContext) => {
+  delete (context as MoveUnitContext)[moveUnitContextKey];
+};
+
+export const preProcessMoveUnit = async (context: HandlerContext, input: MoveUnitInput) => {
   const lobby = context.store.get(input.lobbyId);
   if (!lobby) {
     throw new ApplicationError('NOT_FOUND', 'Lobby not found');
   }
 
-  await lobby.mutex.runExclusive(async () => {
+  const release = await lobby.mutex.acquire();
+  try {
     const match = lobby.match;
     if (!match) {
       throw new ApplicationError('MATCH_NOT_READY', 'Match not initialized');
@@ -58,23 +90,48 @@ export const handleMoveUnit: EventHandler<MoveUnitInput> = async (context, input
       throw new ApplicationError('MOVE_TOO_FAR', 'Destination is out of range');
     }
 
-    unit.x = input.toX;
-    unit.y = input.toY;
-
     const side = getPlayerSide(lobby, context.sid);
+    if (!side) {
+      throw new ApplicationError('INVALID_STATE', 'Unable to determine player side');
+    }
     const targetFlag = side === 'A' ? FLAG_B : FLAG_A;
+
+    setMoveUnitContext(context, {
+      lobby,
+      unit,
+      target: { x: input.toX, y: input.toY },
+      targetFlag,
+      release,
+    });
+  } catch (error) {
+    release();
+    throw error;
+  }
+};
+
+export const handleMoveUnit: EventHandler<MoveUnitInput> = async (context, input) => {
+  const { lobby, unit, target, targetFlag, release } = getMoveUnitContext(context);
+  const match = lobby.match!;
+  try {
+    unit.x = target.x;
+    unit.y = target.y;
+
     if (unit.x === targetFlag.x && unit.y === targetFlag.y) {
       match.winnerSid = context.sid;
       lobby.meta.status = 'finished';
     }
 
     await context.broadcastState(lobby, { type: EVENTS.GAME_MOVE_UNIT, payload: input });
-  });
+  } finally {
+    release();
+    clearMoveUnitContext(context);
+  }
 };
 
 export const moveUnitDefinition = {
   event: EVENTS.GAME_MOVE_UNIT,
   schema,
   useRateLimit: true,
+  preProcess: preProcessMoveUnit,
   handler: handleMoveUnit,
 } as const;
