@@ -1,8 +1,9 @@
-import { EVENTS, MANA_PER_TURN, schemas } from '@repo/shared';
+import { EVENTS, schemas } from '@repo/shared';
 import type { z } from 'zod';
 import type { EventHandler, HandlerContext } from '../../types.js';
 import { ApplicationError } from '../../errors.js';
 import { getPlayerOrder } from '../../../game/rules.js';
+import { expireTalents, startTurnForPlayer } from '../../../game/cards.js';
 import type { LobbyState } from '../../../state.js';
 
 const schema = schemas[EVENTS.GAME_END_TURN];
@@ -80,11 +81,13 @@ export const handleEndTurn: EventHandler<EndTurnInput> = async (context, input) 
   const current = context.sid;
   try {
     match.mana[current] = 0;
-    match.mana[nextPlayer] = MANA_PER_TURN;
+    expireTalents(match, current);
     match.turnNumber += 1;
     match.currentPlayerSid = nextPlayer;
     lobby.currentPlayerSid = nextPlayer;
     lobby.turnNumber = match.turnNumber;
+
+    startTurnForPlayer(match, nextPlayer);
 
     await context.broadcastState(lobby, { type: EVENTS.GAME_END_TURN, payload: input });
   } finally {

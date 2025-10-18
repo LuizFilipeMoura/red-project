@@ -4,7 +4,10 @@ import { joinLobbyDefinition } from './joinLobby.js';
 import { leaveLobbyDefinition } from './leaveLobby.js';
 import { startLobbyDefinition } from './startLobby.js';
 import { passTurnDefinition } from './passTurn.js';
-import { endTurnDefinition, moveUnitDefinition, placeUnitDefinition } from './game/index.js';
+import { endTurnDefinition, moveUnitDefinition } from './game/index.js';
+import { playUnitDefinition } from './card/playUnit.js';
+import { playSpellDefinition } from './card/playSpell.js';
+import { playTalentDefinition } from './card/playTalent.js';
 import type { HandlerDefinition } from '../registry.js';
 
 export const handlerDefinitions: HandlerDefinition[] = [
@@ -14,7 +17,9 @@ export const handlerDefinitions: HandlerDefinition[] = [
   leaveLobbyDefinition,
   startLobbyDefinition,
   passTurnDefinition,
-  placeUnitDefinition,
   moveUnitDefinition,
   endTurnDefinition,
+  playUnitDefinition,
+  playSpellDefinition,
+  playTalentDefinition,
 ];
