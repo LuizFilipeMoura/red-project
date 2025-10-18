@@ -1,4 +1,4 @@
-import { EVENTS, schemas } from '@repo/shared';
+import { EVENTS, LOBBY_CAPACITY, schemas } from '@repo/shared';
 import type { z } from 'zod';
 import type { EventHandler } from '../types.js';
 
@@ -16,10 +16,7 @@ export const handleLeaveLobby: EventHandler<LeaveLobbyInput> = async (context, i
 
     lobby.players.splice(index, 1);
     await context.db.player.deleteMany({
-      where: {
-        lobbyId: lobby.meta.id,
-        sid: context.sid,
-      },
+      where: { lobbyId: lobby.meta.id, sid: context.sid },
     });
 
     await context.leaveLobbyRoom(lobby.meta.id);
@@ -27,7 +24,14 @@ export const handleLeaveLobby: EventHandler<LeaveLobbyInput> = async (context, i
     if (lobby.players.length === 0) {
       context.clearLobbyTimeout(lobby.meta.id);
       lobby.currentPlayerSid = null;
+      lobby.turnNumber = 0;
       lobby.deadlineAt = null;
+      lobby.match = null;
+      await context.db.match.deleteMany({ where: { id: lobby.meta.id } });
+    } else if (lobby.players.length < LOBBY_CAPACITY) {
+      lobby.match = null;
+      lobby.currentPlayerSid = lobby.players[0]?.sid ?? null;
+      lobby.turnNumber = lobby.currentPlayerSid ? 1 : 0;
     }
 
     lobby.meta.status = 'waiting';
@@ -38,9 +42,7 @@ export const handleLeaveLobby: EventHandler<LeaveLobbyInput> = async (context, i
 
     if (lobby.currentPlayerSid === context.sid) {
       lobby.currentPlayerSid = lobby.players[0]?.sid ?? null;
-      if (lobby.currentPlayerSid) {
-        context.scheduleTurnTimeout(lobby);
-      }
+      lobby.turnNumber = lobby.currentPlayerSid ? 1 : 0;
     }
 
     await context.broadcastState(lobby);

@@ -40,7 +40,7 @@ export default function HomePage() {
       console.log('Received lobby list:', payload);
       setLobbies(payload);
     });
-    const unsubSync = socketClient.on<StateSync>('state:sync', (payload) => {
+    const unsubSync = socketClient.on<StateSync & { yourSid?: string }>('state:sync', (payload) => {
       const lobbyId = payload.lobby.id;
       if (typeof window !== 'undefined') {
         const path = window.location.pathname;

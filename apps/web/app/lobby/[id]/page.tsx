@@ -3,11 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import type { ErrorPayload, Lobby } from '@repo/shared';
+import { EVENTS, type ErrorPayload, type Lobby, type StateSync } from '@repo/shared';
 import {
   joinLobby,
   leaveLobby,
-  passTurn,
   socketClient,
   startLobby,
 } from '../../../lib/socket';
@@ -26,10 +25,14 @@ export default function LobbyPage() {
     console.log('Setting up state:sync listener');
     joinLobby(id);
 
-    const unsub = socketClient.on('state:sync', (payload: { lobby: Lobby }) => {
+    const unsub = socketClient.on<StateSync & { yourSid?: string }>(EVENTS.STATE_SYNC, (payload) => {
       console.log("State sync received:", payload);
       if (payload.lobby.id === id) {
         setLobby(payload.lobby);
+        // Redirect to game page when match starts
+        if (payload.lobby.status === 'started') {
+          router.push(`/game/${id}`);
+        }
       }
     });
     const unsubErr = socketClient.on<ErrorPayload>('error', (payload) => toast.error(payload.message));
@@ -37,7 +40,7 @@ export default function LobbyPage() {
       unsub?.();
       unsubErr?.();
     };
-  }, [params?.id]);
+  }, [params?.id, router]);
 
   console.log("Lobby state:", lobby);
 
@@ -93,11 +96,6 @@ export default function LobbyPage() {
     startLobby(lobby.id);
   };
 
-  const handlePassTurn = () => {
-    if (!lobby) return;
-    passTurn(lobby.id);
-  };
-
   const isFull = lobby.players.length >= lobby.capacity;
   const gameStarted = lobby.status === 'started';
 
@@ -143,16 +141,9 @@ export default function LobbyPage() {
           <Button variant="ghost" onClick={handleLeave}>
             Leave lobby
           </Button>
-          <div className="flex gap-2">
-            {gameStarted && (
-              <Button variant="secondary" onClick={handlePassTurn} disabled={!lobby.currentPlayerSid}>
-                Pass turn
-              </Button>
-            )}
-            <Button onClick={handleStart} disabled={!isFull || gameStarted}>
-              Start match
-            </Button>
-          </div>
+          <Button onClick={handleStart} disabled={!isFull || gameStarted}>
+            Start match
+          </Button>
         </CardFooter>
       </Card>
     </main>
