@@ -28,25 +28,34 @@ const shuffle = <T>(items: T[]) => {
 };
 
 const UNIT_BLUEPRINT: Array<{ unitType: UnitType; copies: number }> = [
-  { unitType: 'Mage', copies: 4 },
-  { unitType: 'Warrior', copies: 6 },
-  { unitType: 'Archer', copies: 4 },
+  { unitType: 'Mage', copies: 3 },
+  { unitType: 'Warrior', copies: 4 },
+  { unitType: 'Archer', copies: 3 },
 ];
 
 const SPELL_BLUEPRINT: Array<
   Omit<Card_Spell, 'id'> & { id?: string; copies: number }
 > = [
   {
-    copies: 2,
+    copies: 1,
     kind: 'Spell',
-    name: 'Fireball',
+    name: 'Arcane Insight',
+    cost: 1,
+    area: 'cell',
+    text: 'Draw two cards from your deck.',
+    effects: [{ type: 'draw', amount: 2, friendlyFire: false }],
+  },
+  {
+    copies: 1,
+    kind: 'Spell',
+    name: 'Firebolt Precision',
     cost: 2,
     area: 'cell',
     text: 'Deal 3 damage to a single target.',
     effects: [{ type: 'damage', amount: 3, friendlyFire: false }],
   },
   {
-    copies: 2,
+    copies: 1,
     kind: 'Spell',
     name: 'Healing Wave',
     cost: 2,
@@ -55,9 +64,9 @@ const SPELL_BLUEPRINT: Array<
     effects: [{ type: 'heal', amount: 3, friendlyFire: false }],
   },
   {
-    copies: 2,
+    copies: 1,
     kind: 'Spell',
-    name: 'Fortify',
+    name: 'Fortify Armor',
     cost: 3,
     area: 'cell',
     text: 'Grant +2 max HP and heal 2 to an allied unit.',
@@ -65,6 +74,63 @@ const SPELL_BLUEPRINT: Array<
       { type: 'maxHpUp', amount: 2, friendlyFire: false },
       { type: 'heal', amount: 2, friendlyFire: false },
     ],
+  },
+  {
+    copies: 1,
+    kind: 'Spell',
+    name: 'Flame Sweep',
+    cost: 3,
+    area: 'row',
+    text: 'Deal 2 damage to every unit in a row. Hits allies.',
+    effects: [{ type: 'damage', amount: 2, friendlyFire: true }],
+  },
+  {
+    copies: 1,
+    kind: 'Spell',
+    name: 'Piercing Column',
+    cost: 4,
+    area: 'col',
+    text: 'Deal 2 damage to every unit in a column.',
+    effects: [{ type: 'damage', amount: 2, friendlyFire: false }],
+  },
+  {
+    copies: 1,
+    kind: 'Spell',
+    name: 'Meteor Shower',
+    cost: 5,
+    area: { shape: 'square2x2' },
+    text: 'Deal 4 damage to a 2x2 area. Hits allies.',
+    effects: [{ type: 'damage', amount: 4, friendlyFire: true }],
+  },
+  {
+    copies: 1,
+    kind: 'Spell',
+    name: 'Verdant Growth',
+    cost: 4,
+    area: { shape: 'diag', length: 2 },
+    text: 'Heal units along a diagonal by 2 HP.',
+    effects: [{ type: 'heal', amount: 2, friendlyFire: false }],
+  },
+  {
+    copies: 1,
+    kind: 'Spell',
+    name: 'Static Field',
+    cost: 1,
+    area: 'cell',
+    text: 'Deal 1 damage to a target and draw a card.',
+    effects: [
+      { type: 'damage', amount: 1, friendlyFire: false },
+      { type: 'draw', amount: 1, friendlyFire: false },
+    ],
+  },
+  {
+    copies: 1,
+    kind: 'Spell',
+    name: 'Sanctuary Beacon',
+    cost: 3,
+    area: 'col',
+    text: 'Heal 2 HP to units in a column.',
+    effects: [{ type: 'heal', amount: 2, friendlyFire: false }],
   },
 ];
 
@@ -154,10 +220,19 @@ export const moveCardToZone = (
   deck[zone].push(cardId);
 };
 
-const TALENT_EFFECTS: Record<UnitType, { amount: number; text: string }> = {
-  Mage: { amount: 3, text: 'Mage talent: deal 3 damage within range 2.' },
-  Warrior: { amount: 2, text: 'Warrior talent: deal 2 damage within range 1.' },
-  Archer: { amount: 2, text: 'Archer talent: deal 2 damage within range 3.' },
+const TALENT_EFFECTS: Record<UnitType, { text: string; effect: Card_Talent['effect'] }> = {
+  Mage: {
+    text: 'Mage talent: deal 3 damage within range 2.',
+    effect: { type: 'damage', amount: 3 },
+  },
+  Warrior: {
+    text: 'Warrior talent: heal 2 HP on an adjacent ally.',
+    effect: { type: 'heal', amount: 2 },
+  },
+  Archer: {
+    text: 'Archer talent: deal 2 damage within range 3.',
+    effect: { type: 'damage', amount: 2 },
+  },
 };
 
 export const clearTalentsForPlayer = (match: MatchState, sid: string) => {
@@ -209,7 +284,7 @@ export const generateTalentsForPlayer = (match: MatchState, sid: string, turnNum
       removeTalentsForUnit(match, unit.id);
     }
     const talentId = `talent-${unit.id}-${turnNumber}-${nanoid(6)}`;
-    const effect = TALENT_EFFECTS[unit.type];
+    const template = TALENT_EFFECTS[unit.type];
     const card: Card_Talent = {
       id: talentId,
       kind: 'Talent',
@@ -217,8 +292,8 @@ export const generateTalentsForPlayer = (match: MatchState, sid: string, turnNum
       unitType: unit.type,
       cost: 1,
       range: TALENT_RANGE[unit.type],
-      text: effect.text,
-      effect: { type: 'damage', amount: effect.amount },
+      text: template.text,
+      effect: { ...template.effect },
       expiresAtTurn: turnNumber,
     };
     match.cards[talentId] = card;
@@ -320,13 +395,26 @@ export const applySpellCard = (
   card: Card_Spell,
   anchor: { x: number; y: number },
 ) => {
-  const areaCells = resolveAreaCells(card.area, anchor);
   const removedUnits: string[] = [];
+
+  for (const effect of card.effects) {
+    if (effect.type !== 'draw') continue;
+    for (let i = 0; i < effect.amount; i += 1) {
+      drawCard(match, casterSid);
+    }
+  }
+
+  const areaEffects = card.effects.filter((effect) => effect.type !== 'draw');
+  if (areaEffects.length === 0) {
+    return { removedUnits };
+  }
+
+  const areaCells = resolveAreaCells(card.area, anchor);
 
   for (const unit of match.units) {
     const inArea = areaCells.some((cell) => cell.x === unit.x && cell.y === unit.y);
     if (!inArea) continue;
-    for (const effect of card.effects) {
+    for (const effect of areaEffects) {
       applyEffectToUnit(effect, casterSid, unit);
     }
     if (unit.hp <= 0) {

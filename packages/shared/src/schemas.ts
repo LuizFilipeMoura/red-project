@@ -61,7 +61,7 @@ export const areaShapeSchema = z.union([
 ]);
 
 export const spellEffectSchema = z.object({
-  type: z.enum(['damage', 'heal', 'maxHpUp']),
+  type: z.enum(['damage', 'heal', 'maxHpUp', 'draw']),
   amount: z.number().int().min(0),
   friendlyFire: z.boolean().default(false),
 });
