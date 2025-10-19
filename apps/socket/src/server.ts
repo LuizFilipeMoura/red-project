@@ -44,12 +44,12 @@ const io = new Server(httpServer, {
   transports: ['polling', 'websocket'],
 });
 
-const signSid = (sid: string | false) => 's:' + signature.sign(sid, env.COOKIE_SECRET);
-const unsignSid = (signed: string | undefined | null) => {
+const signSid = (sid: string) => 's:' + signature.sign(sid, env.COOKIE_SECRET);
+const unsignSid = (signed: string | undefined | null): string | null => {
   if (!signed) return null;
   if (!signed.startsWith('s:')) return null;
   const unsigned = signature.unsign(signed.slice(2), env.COOKIE_SECRET);
-  return unsigned ?? null;
+  return unsigned === false ? null : unsigned;
 };
 
 const issueSid = () => randomBytes(16).toString('hex');
@@ -57,7 +57,7 @@ const issueSid = () => randomBytes(16).toString('hex');
 io.engine.use((req: { headers: { cookie: any; }; }, res: { setHeader: (arg0: string, arg1: string) => void; }, next: () => void) => {
   const cookies = cookie.parse(req.headers.cookie ?? '');
   const existing = unsignSid(cookies[COOKIE_NAME]);
-  const sid = existing ?? issueSid();
+  const sid: string = existing ?? issueSid();
   if (!existing) {
     const signed = signSid(sid);
     const cookieStr = cookie.serialize(COOKIE_NAME, signed, {
@@ -161,7 +161,17 @@ const pruneEmptyLobbies = async () => {
   }
 };
 
+const syncActiveMatches = async () => {
+  for (const [id, lobby] of store) {
+    // Only sync lobbies that have an active match (status = 'started')
+    if (lobby.meta.status === 'started' && lobby.match && !lobby.match.winnerSid) {
+      await broadcastState(lobby);
+    }
+  }
+};
+
 setInterval(pruneEmptyLobbies, 60_000).unref();
+setInterval(syncActiveMatches, 1_000).unref();
 
 gameNs.use((socket, next) => {
   const cookies = cookie.parse(socket.handshake.headers.cookie ?? '');

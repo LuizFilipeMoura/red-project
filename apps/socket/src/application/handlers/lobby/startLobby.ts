@@ -67,6 +67,9 @@ export const handleStartLobby: EventHandler<StartLobbyInput> = async (context, i
       const second = lobby.players.find((player) => player.sid !== first)?.sid ?? lobby.players[0]!.sid;
       const { cards, decks } = createInitialDecks([first, second]);
       lobby.match = initializeMatchState(lobby, [first, second]);
+      console.log("Starting match between", first, "and", second);
+      console.log("cards", cards)
+      console.log("decks", decks)
       lobby.match.cards = cards;
       lobby.match.decks = decks;
       lobby.match.talentsInHand = { [first]: [], [second]: [] };

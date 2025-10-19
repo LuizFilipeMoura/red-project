@@ -93,21 +93,6 @@ export const handleJoinLobby: EventHandler<JoinLobbyInput> = async (context, inp
     lobby.players.push(playerState);
     await context.joinLobbyRoom(lobby.meta.id);
 
-    if (lobby.players.length === LOBBY_CAPACITY) {
-      const first = lobby.players[Math.floor(Math.random() * lobby.players.length)];
-      const second = lobby.players.find((player) => player.sid !== first.sid);
-      if (second) {
-        lobby.currentPlayerSid = first.sid;
-        lobby.turnNumber = 1;
-        lobby.meta.status = 'started';
-        lobby.match = initializeMatchState(lobby, [first.sid, second.sid]);
-        await context.db.lobby.update({
-          where: { id: lobby.meta.id },
-          data: { status: lobby.meta.status },
-        });
-      }
-    }
-
     await context.broadcastState(lobby);
   } finally {
     release();
