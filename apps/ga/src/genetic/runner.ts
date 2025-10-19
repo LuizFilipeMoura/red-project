@@ -1,12 +1,9 @@
-import geneticJs from 'genetic-js';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
 import { ensureStorage, persistEpisodes, persistGeneration, saveWeights } from '../persistence/storage.js';
 import { telemetryClient } from '../telemetry.js';
 import type { PolicyGenome } from '../types.js';
 import { Evaluator, type IndividualEvaluation } from '../evaluation/evaluator.js';
-
-const Genetic: any = geneticJs as any;
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
@@ -17,6 +14,22 @@ const selectBestEpisode = (evaluation: IndividualEvaluation) => {
     return fitnessB - fitnessA;
   });
   return sorted[0] ?? evaluation.episodes[0];
+};
+
+const cloneGenome = (genome: PolicyGenome): PolicyGenome => ({ ...genome });
+
+const tournamentSelect = (evaluations: IndividualEvaluation[], tournamentSize: number) => {
+  if (evaluations.length === 0) throw new Error('Cannot select from empty population');
+
+  let best: IndividualEvaluation | undefined;
+  for (let index = 0; index < tournamentSize; index += 1) {
+    const candidate = evaluations[Math.floor(Math.random() * evaluations.length)];
+    if (!best || candidate.stats.fitness > best.stats.fitness) {
+      best = candidate;
+    }
+  }
+
+  return best!;
 };
 
 export class GARunner {
@@ -59,40 +72,27 @@ export class GARunner {
 
   async run() {
     await ensureStorage();
-    const genetic = Genetic.create();
-    const evaluationsByGeneration = new Map<number, IndividualEvaluation[]>();
-    let evaluatingGeneration = 0;
+    logger.info(
+      {
+        populationSize: env.GA_POPULATION_SIZE,
+        generations: env.GA_GENERATIONS,
+        dataDir: env.GA_DATA_DIR,
+        generationsPath: env.GA_GENERATIONS_PATH,
+        episodesPath: env.GA_EPISODES_PATH,
+        weightsDir: env.GA_WEIGHTS_DIR,
+      },
+      'Starting GA run',
+    );
+    let population: PolicyGenome[] = Array.from({ length: env.GA_POPULATION_SIZE }, () => this.seedGenome());
 
-    genetic.optimize = Genetic.Optimize.Maximize;
-    genetic.select1 = Genetic.Select1.Tournament2;
-    genetic.select2 = Genetic.Select2.Tournament3;
-    genetic.seed = () => this.seedGenome();
-    genetic.mutate = (entity: PolicyGenome) => this.mutateGenome(entity);
-    genetic.crossover = (mother: PolicyGenome, father: PolicyGenome) =>
-      this.crossoverGenome(mother, father);
+    for (let generation = 0; generation < env.GA_GENERATIONS; generation += 1) {
+      const evaluations = await Promise.all(
+        population.map((genome) => this.evaluator.evaluate(genome, generation)),
+      );
 
-    genetic.fitness = async (entity: PolicyGenome) => {
-      const generation = evaluatingGeneration;
-      const evaluation = await this.evaluator.evaluate(entity, generation);
-      const list = evaluationsByGeneration.get(generation) ?? [];
-      list.push(evaluation);
-      evaluationsByGeneration.set(generation, list);
-      return evaluation.stats.fitness;
-    };
-
-    let finishResolver: (() => void) | undefined;
-
-    genetic.notification = async (
-      population: Array<{ entity: PolicyGenome; score: number }>,
-      generation: number,
-      _stats: unknown,
-      isFinished: boolean,
-    ) => {
-      const evaluations = evaluationsByGeneration.get(generation) ?? [];
       if (evaluations.length === 0) {
         logger.warn({ generation }, 'No evaluations recorded for generation');
-        if (isFinished && finishResolver) finishResolver();
-        return;
+        continue;
       }
 
       const sorted = [...evaluations].sort((a, b) => b.stats.fitness - a.stats.fitness);
@@ -118,7 +118,7 @@ export class GARunner {
 
       const snapshot = {
         gen: generation,
-        population: population.length,
+        population: evaluations.length,
         best: {
           fitness: best.stats.fitness,
           weightsHash: best.weightsHash,
@@ -139,8 +139,15 @@ export class GARunner {
       await persistGeneration(snapshot);
       await persistEpisodes(best.episodes);
       await saveWeights(best.genome, best.weightsHash);
-
-      evaluationsByGeneration.delete(generation);
+      logger.debug(
+        {
+          generation,
+          generationsPath: env.GA_GENERATIONS_PATH,
+          episodesPath: env.GA_EPISODES_PATH,
+          weightsHash: best.weightsHash,
+        },
+        'Persisted GA artifacts',
+      );
 
       telemetryClient
         .sendSnapshot(snapshot)
@@ -155,26 +162,41 @@ export class GARunner {
         'Completed GA generation',
       );
 
-      if (isFinished && finishResolver) {
-        finishResolver();
+      if (generation === env.GA_GENERATIONS - 1) {
+        break;
       }
 
-      evaluatingGeneration = generation + 1;
-    };
+      const nextPopulation: PolicyGenome[] = [];
+      const elitismCount = Math.max(0, Math.min(env.GA_ELITISM, sorted.length));
+      for (let index = 0; index < elitismCount; index += 1) {
+        nextPopulation.push(cloneGenome(sorted[index]!.genome));
+      }
 
-    await new Promise<void>((resolve) => {
-      finishResolver = resolve;
-      genetic.evolve(
-        {
-          iterations: env.GA_GENERATIONS,
-          size: env.GA_POPULATION_SIZE,
-          crossover: env.GA_CROSSOVER_PROB,
-          mutation: env.GA_MUTATION_PROB,
-          skip: 0,
-          elitism: env.GA_ELITISM,
-        },
-        {},
-      );
-    });
+      while (nextPopulation.length < env.GA_POPULATION_SIZE) {
+        const parent1 = tournamentSelect(sorted, 2).genome;
+        const parent2 = tournamentSelect(sorted, 3).genome;
+
+        let offspring: PolicyGenome[];
+        if (Math.random() < env.GA_CROSSOVER_PROB) {
+          offspring = this.crossoverGenome(parent1, parent2);
+        } else {
+          offspring = [cloneGenome(parent1), cloneGenome(parent2)];
+        }
+
+        offspring = offspring.map((child) =>
+          Math.random() < env.GA_MUTATION_PROB ? this.mutateGenome(child) : cloneGenome(child),
+        );
+
+        for (const child of offspring) {
+          if (nextPopulation.length < env.GA_POPULATION_SIZE) {
+            nextPopulation.push(child);
+          }
+        }
+      }
+
+      population = nextPopulation;
+    }
+
+    logger.info('GA run completed');
   }
 }
