@@ -49,7 +49,7 @@ export const toLobby = (state: LobbyState): Lobby => ({
   name: state.meta.name,
   isPrivate: Boolean(state.meta.isPrivate),
   players: state.players.map(toPlayer),
-  capacity: state.meta.capacity,
+  capacity: state.meta.capacity as 2,
   createdAt: new Date(state.meta.createdAt).toISOString(),
   ownerSid: state.meta.ownerSid ?? undefined,
   status: state.meta.status as Lobby['status'],
@@ -72,8 +72,8 @@ export const createLobbyRow = (
   createdAt:
     typeof partial.createdAt === 'number'
       ? partial.createdAt
-      : partial.createdAt instanceof Date
-        ? partial.createdAt.getTime()
+      : partial.createdAt && typeof partial.createdAt === 'object' && 'getTime' in partial.createdAt
+        ? (partial.createdAt as Date).getTime()
         : Date.now(),
   status: partial.status ?? 'waiting',
 });

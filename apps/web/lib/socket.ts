@@ -42,8 +42,14 @@ class SocketManager {
       try {
         const schema = schemas[event];
         console.log('Raw socket message:', event, message);
-        const payload = this.parseMessage(event, message, schema);
+        const payload = this.parseMessage(event, message, schema as z.ZodTypeAny);
         console.log('Parsed payload:', event, payload);
+
+        // Log full game state on state sync
+        if (event === 'state:sync') {
+          console.log('🎮 STATE SYNC - Full game state:', JSON.stringify(payload, null, 2));
+        }
+
         this.handlers[event]?.forEach((handler) => handler(payload));
       } catch (error) {
         console.error('Socket payload parse failed', event, error);
