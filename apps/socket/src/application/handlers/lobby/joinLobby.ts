@@ -66,6 +66,16 @@ export const handleJoinLobby: EventHandler<JoinLobbyInput> = async (context, inp
   const { lobby, isRejoining, release } = getJoinLobbyContext(context);
 
   try {
+    context.logger.info(
+      {
+        lobbyId: input.lobbyId,
+        sid: context.sid,
+        isRejoining,
+        currentPlayerCount: lobby.players.length,
+      },
+      'Player joining lobby',
+    );
+
     if (isRejoining) {
       await context.joinLobbyRoom(lobby.meta.id);
       return;

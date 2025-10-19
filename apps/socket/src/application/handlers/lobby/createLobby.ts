@@ -10,6 +10,16 @@ const schema = schemas[EVENTS.CREATE];
 type CreateLobbyInput = z.infer<typeof schema>;
 
 export const handleCreateLobby: EventHandler<CreateLobbyInput> = async (context, input) => {
+  context.logger.info(
+    {
+      sid: context.sid,
+      socketId: context.socket.id,
+      lobbyName: input.name,
+      isPrivate: input.isPrivate,
+    },
+    'Creating lobby',
+  );
+
   const lobbyRow = createLobbyRow({
     name: input.name,
     ownerSid: context.sid,
@@ -61,8 +71,37 @@ export const handleCreateLobby: EventHandler<CreateLobbyInput> = async (context,
   };
 
   context.store.set(lobbyRow.id, lobbyState);
+
+  context.logger.info(
+    {
+      lobbyId: lobbyRow.id,
+      sid: context.sid,
+      socketId: context.socket.id,
+    },
+    'Joining lobby room',
+  );
+
   await context.joinLobbyRoom(lobbyRow.id);
+
+  context.logger.info(
+    {
+      lobbyId: lobbyRow.id,
+      sid: context.sid,
+      socketId: context.socket.id,
+      room: `lobby:${lobbyRow.id}`,
+    },
+    'Creator joined lobby room, broadcasting state',
+  );
+
   await context.broadcastState(lobbyState);
+
+  context.logger.info(
+    {
+      lobbyId: lobbyRow.id,
+      playerCount: lobbyState.players.length,
+    },
+    'Lobby creation complete - state broadcast finished',
+  );
 };
 
 export const createLobbyDefinition = {

@@ -57,6 +57,14 @@ export const handleStartLobby: EventHandler<StartLobbyInput> = async (context, i
   const { lobby, release } = getStartLobbyContext(context);
 
   try {
+    context.logger.info(
+      {
+        lobbyId: lobby.meta.id,
+        playerCount: lobby.players.length,
+        players: lobby.players.map((p) => p.sid),
+      },
+      'Starting lobby',
+    );
 
     lobby.meta.status = 'started';
     if (!lobby.currentPlayerSid) {
@@ -67,9 +75,17 @@ export const handleStartLobby: EventHandler<StartLobbyInput> = async (context, i
       const second = lobby.players.find((player) => player.sid !== first)?.sid ?? lobby.players[0]!.sid;
       const { cards, decks } = createInitialDecks([first, second]);
       lobby.match = initializeMatchState(lobby, [first, second]);
-      console.log("Starting match between", first, "and", second);
-      console.log("cards", cards)
-      console.log("decks", decks)
+
+      context.logger.info(
+        {
+          lobbyId: lobby.meta.id,
+          playerA: first,
+          playerB: second,
+          cardCount: Object.keys(cards).length,
+        },
+        'Match initialized between players',
+      );
+
       lobby.match.cards = cards;
       lobby.match.decks = decks;
       lobby.match.talentsInHand = { [first]: [], [second]: [] };
@@ -78,6 +94,15 @@ export const handleStartLobby: EventHandler<StartLobbyInput> = async (context, i
       startTurnForPlayer(lobby.match, first);
       lobby.turnNumber = lobby.match.turnNumber;
       lobby.currentPlayerSid = lobby.match.currentPlayerSid;
+
+      context.logger.info(
+        {
+          lobbyId: lobby.meta.id,
+          currentPlayer: lobby.currentPlayerSid,
+          turnNumber: lobby.turnNumber,
+        },
+        'Match started, first turn set',
+      );
     }
 
     await context.db.lobby.update({
@@ -85,6 +110,7 @@ export const handleStartLobby: EventHandler<StartLobbyInput> = async (context, i
       data: { status: lobby.meta.status },
     });
 
+    context.logger.info({ lobbyId: lobby.meta.id }, 'Broadcasting started match state');
     await context.broadcastState(lobby);
   } finally {
     release();

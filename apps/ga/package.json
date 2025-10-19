@@ -8,12 +8,12 @@
     "start": "node dist/index.js",
     "build": "tsc --project tsconfig.json",
     "lint": "eslint src --ext .ts",
-    "typecheck": "tsc --noEmit --project tsconfig.json"
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "verify-data": "tsx src/scripts/verifyData.ts"
   },
   "dependencies": {
     "@repo/shared": "workspace:*",
     "dotenv": "^16.4.5",
-    "genetic-js": "^0.2.7",
     "pino": "^8.17.0",
     "pino-pretty": "^10.3.0",
     "seedrandom": "^3.0.5",
@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.12.7",
+    "@types/seedrandom": "^3.0.8",
     "eslint": "^8.57.0",
     "tsx": "^4.20.6",
     "typescript": "^5.4.5"

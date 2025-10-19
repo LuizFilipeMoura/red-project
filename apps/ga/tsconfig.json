@@ -3,7 +3,7 @@
   "compilerOptions": {
     "outDir": "dist",
     "module": "ESNext",
-    "moduleResolution": "Bundler",
+    "moduleResolution": "Node",
     "types": ["node"],
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,

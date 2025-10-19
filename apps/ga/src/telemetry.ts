@@ -13,14 +13,18 @@ export class TelemetryClient {
     }
     if (!this.connecting) {
       this.connecting = new Promise<Socket>((resolve, reject) => {
+        logger.debug({ url: env.GA_SOCKET_URL }, 'Attempting to connect to telemetry socket');
         const socket = io(env.GA_SOCKET_URL, {
           transports: ['websocket', 'polling'],
           withCredentials: true,
         });
         socket.on('connect', () => {
-          logger.info({ id: socket.id }, 'Telemetry socket connected');
+          logger.info({ id: socket.id, url: env.GA_SOCKET_URL }, 'Telemetry socket connected');
           this.socket = socket;
           resolve(socket);
+        });
+        socket.on('connect_error', (error) => {
+          logger.error({ err: error, url: env.GA_SOCKET_URL }, 'Telemetry socket connection error');
         });
         socket.on('error', (error) => {
           logger.error({ err: error }, 'Telemetry socket error');
@@ -40,6 +44,15 @@ export class TelemetryClient {
 
   async sendSnapshot(snapshot: GaSnapshot) {
     const socket = await this.ensureSocket();
+    logger.debug(
+      {
+        gen: snapshot.gen,
+        socketId: socket.id,
+        connected: socket.connected,
+        event: EVENTS.GA_UPDATE,
+      },
+      'Emitting GA snapshot to socket',
+    );
     socket.emit(
       EVENTS.GA_UPDATE,
       makeMsg(EVENTS.GA_UPDATE, {
@@ -47,6 +60,7 @@ export class TelemetryClient {
         snapshot,
       }),
     );
+    logger.debug({ gen: snapshot.gen }, 'GA snapshot emitted');
   }
 }
 

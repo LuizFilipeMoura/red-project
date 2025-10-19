@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where:*)",
+      "Bash(pnpm config set:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm rebuild:*)",
+      "Bash(pnpm:*)",
+      "Bash(pnpm list:*)",
+      "Bash(node:*)",
+      "Bash(npm run install:*)",
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"yes\" pnpm prisma migrate reset --force)",
+      "Bash(cat package.json)",
+      "Bash(cat prisma/schema.prisma)",
+      "Bash(npx prisma generate)",
+      "Bash(npx prisma migrate status)",
+      "Bash(npx prisma migrate deploy)",
+      "Bash(npx prisma migrate dev --name init)",
+      "Bash(npx prisma migrate reset --force)",
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"yes\" npx prisma migrate reset --force)",
+      "Bash(tree -L 3 apps/socket/src/application/handlers/)",
+      "Bash(for file in joinLobby.ts leaveLobby.ts startLobby.ts listLobbies.ts)",
+      "Bash(do sed -i \"s|from ''../../state\\.js''|from ''../../../state.js''|g; s|from ''../../security\\.js''|from ''../../../security.js''|g; s|from ''../types\\.js''|from ''../../types.js''|g; s|from ''../errors\\.js''|from ''../../errors.js''|g; s|from ''../../game/|from ''../../../game/|g\" \"$file\")",
+      "Bash(done)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npm run build)",
+      "Bash(npm view genetic-js versions --json)",
+      "Bash(npm search genetic algorithm --json)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

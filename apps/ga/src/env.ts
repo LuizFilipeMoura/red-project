@@ -10,7 +10,7 @@ const envSchema = z.object({
   GA_EPISODES_PATH: z.string().default('apps/ga/data/episodes.jsonl'),
   GA_WEIGHTS_DIR: z.string().default('apps/ga/data/best'),
   GA_TRACES_DIR: z.string().default('apps/ga/data/traces'),
-  GA_POPULATION_SIZE: z.coerce.number().int().min(4).default(40),
+  GA_POPULATION_SIZE: z.coerce.number().int().min(1).default(40),
   GA_GENERATIONS: z.coerce.number().int().min(1).default(60),
   GA_ELITISM: z.coerce.number().int().min(0).default(8),
   GA_MUTATION_PROB: z.coerce.number().min(0).max(1).default(0.35),
@@ -30,6 +30,7 @@ const envSchema = z.object({
       return value === 'true';
     })
     .default(true),
+  GA_ACTION_DELAY_MS: z.coerce.number().int().min(0).default(100),
 });
 
 export const env = envSchema.parse(process.env);
