@@ -42,12 +42,28 @@ export const saveWeights = async (genome: PolicyGenome, hash: string) => {
 
 export const persistGeneration = async (snapshot: GaSnapshot) => {
   await appendJsonl(env.GA_GENERATIONS_PATH, snapshot);
+  logger.info(
+    {
+      gen: snapshot.gen,
+      filePath: env.GA_GENERATIONS_PATH,
+      fitness: snapshot.best.fitness,
+    },
+    'Generation snapshot persisted to JSONL',
+  );
 };
 
 export const persistEpisodes = async (episodes: EpisodeResult[]) => {
   for (const episode of episodes) {
     await appendJsonl(env.GA_EPISODES_PATH, episode);
   }
+  logger.debug(
+    {
+      count: episodes.length,
+      filePath: env.GA_EPISODES_PATH,
+      gen: episodes[0]?.gen,
+    },
+    'Episodes persisted to JSONL',
+  );
 };
 
 export const persistTrace = async (

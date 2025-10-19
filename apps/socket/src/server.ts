@@ -26,6 +26,7 @@ import { handlerDefinitions } from './application/handlers';
 import { prisma as database } from '@repo/db';
 import type { LobbyState } from './state.js';
 import { hydrateLobbies } from './state.js';
+import { loadHistoricalGenerations } from './ga/loadHistoricalData.js';
 
 const db = database;
 const store = createLobbyStore();
@@ -176,8 +177,22 @@ setInterval(syncActiveMatches, 1_000).unref();
 gameNs.use((socket, next) => {
   const cookies = cookie.parse(socket.handshake.headers.cookie ?? '');
   const sid = unsignSid(cookies[COOKIE_NAME]);
+  logger.debug(
+    {
+      socketId: socket.id,
+      hasCookie: !!cookies[COOKIE_NAME],
+      sid,
+      transport: socket.conn.transport.name,
+    },
+    'Game namespace connection attempt',
+  );
   if (!sid) {
-    return next(new Error('unauthorized'));
+    // Allow GA emitter to connect without cookies by generating a temporary SID
+    const tempSid = `ga-emitter-${socket.id}`;
+    logger.info({ socketId: socket.id, tempSid }, 'GA emitter connection without cookies, using temp SID');
+    socket.data.sid = tempSid;
+    next();
+    return;
   }
   socket.data.sid = sid;
   next();
@@ -217,6 +232,7 @@ gameNs.on('connection', (socket) => {
 
 const start = async () => {
   await loadPersistedState();
+  await loadHistoricalGenerations();
   httpServer.listen(env.PORT, () => {
     logger.info({ port: env.PORT }, 'Socket server listening');
   });

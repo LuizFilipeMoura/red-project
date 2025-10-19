@@ -31,15 +31,29 @@ export class GaTelemetryStore {
     return this.byGeneration.get(gen);
   }
 
+  getAllSnapshots(): GaSnapshot[] {
+    return Array.from(this.byGeneration.values())
+      .map((entry) => entry.snapshot)
+      .sort((a, b) => b.gen - a.gen); // Most recent first
+  }
+
   broadcastLatest(namespace: Namespace, targetSocketId?: string) {
     const entry = this.getLatest();
-    if (!entry) return;
+    if (!entry) {
+      logger.debug('No latest snapshot to broadcast');
+      return;
+    }
     const payload = makeMsg(EVENTS.GA_UPDATE, {
       snapshot: entry.snapshot,
     });
     if (targetSocketId) {
+      logger.debug(
+        { gen: entry.snapshot.gen, targetSocketId },
+        'Broadcasting GA snapshot to specific socket',
+      );
       namespace.to(targetSocketId).emit(EVENTS.GA_UPDATE, payload);
     } else {
+      logger.debug({ gen: entry.snapshot.gen, room: monitorRoom }, 'Broadcasting GA snapshot to monitor room');
       namespace.to(monitorRoom).emit(EVENTS.GA_UPDATE, payload);
     }
   }

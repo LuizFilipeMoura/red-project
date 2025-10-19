@@ -5,6 +5,8 @@
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "dev": "turbo run dev --parallel",
+    "dev:monitor": "turbo run dev --filter=@repo/socket --filter=@repo/web --parallel",
+    "dev:ga": "turbo run dev --filter=@repo/ga",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",

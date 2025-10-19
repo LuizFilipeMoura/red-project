@@ -86,9 +86,25 @@ export class GARunner {
     let population: PolicyGenome[] = Array.from({ length: env.GA_POPULATION_SIZE }, () => this.seedGenome());
 
     for (let generation = 0; generation < env.GA_GENERATIONS; generation += 1) {
-      const evaluations = await Promise.all(
-        population.map((genome) => this.evaluator.evaluate(genome, generation)),
+      logger.info(
+        {
+          generation,
+          totalGenerations: env.GA_GENERATIONS,
+          populationSize: population.length,
+        },
+        `Starting generation ${generation + 1}/${env.GA_GENERATIONS}`,
       );
+
+      // Evaluate population sequentially to avoid overwhelming the server
+      const evaluations: typeof import('../evaluation/evaluator.js').IndividualEvaluation[] = [];
+      for (let i = 0; i < population.length; i += 1) {
+        logger.info(
+          { generation, individualIndex: i + 1, totalIndividuals: population.length },
+          `Evaluating individual ${i + 1}/${population.length}`,
+        );
+        const evaluation = await this.evaluator.evaluate(population[i]!, generation);
+        evaluations.push(evaluation);
+      }
 
       if (evaluations.length === 0) {
         logger.warn({ generation }, 'No evaluations recorded for generation');
@@ -151,7 +167,7 @@ export class GARunner {
 
       telemetryClient
         .sendSnapshot(snapshot)
-        .catch((error) => logger.error({ err: error }, 'Failed to send telemetry snapshot'));
+        .catch((error) => logger.error({ err: error, generation }, 'Failed to send telemetry snapshot'));
 
       logger.info(
         {
