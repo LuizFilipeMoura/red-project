@@ -7,6 +7,7 @@ import {
 } from './lobby/index.js';
 import { endTurnDefinition, moveUnitDefinition } from './game/index.js';
 import { playUnitDefinition, playSpellDefinition, playTalentDefinition } from './card/index.js';
+import { gaHandlerDefinitions } from './ga/index.js';
 import type { HandlerDefinition } from '../registry.js';
 
 export const handlerDefinitions: HandlerDefinition[] = [
@@ -25,4 +26,7 @@ export const handlerDefinitions: HandlerDefinition[] = [
   playUnitDefinition,
   playSpellDefinition,
   playTalentDefinition,
+
+  // GA orchestration
+  ...gaHandlerDefinitions,
 ];

@@ -201,6 +201,94 @@ export const playTalentCardSchema = z.object({
   targetY: z.number().int().min(0).max(BOARD_H - 1),
 });
 
+export const gaEpisodeSummarySchema = z.object({
+  gen: z.number().int().min(0),
+  seed: z.string().min(1),
+  weightsHash: z.string().min(1),
+  win: z.boolean(),
+  turns: z.number().int().min(0),
+  score: z.number(),
+  engineVersion: z.string().min(1),
+  policyVersion: z.string().min(1),
+  traceRef: z.string().min(1).optional(),
+});
+
+export const gaSampleSummarySchema = z.object({
+  weightsHash: z.string().min(1),
+  fitness: z.number(),
+  mean: z.number(),
+  p90: z.number(),
+  variance: z.number().nonnegative(),
+  sampleSize: z.number().int().min(1),
+});
+
+export const gaSnapshotSchema = z.object({
+  gen: z.number().int().min(0),
+  population: z.number().int().min(1),
+  best: z.object({
+    fitness: z.number(),
+    weightsHash: z.string().min(1),
+    entropy: z.number().nonnegative().optional(),
+    winRate: z.number().min(0).max(1).optional(),
+    turns: z.number().int().min(0).optional(),
+    score: z.number().optional(),
+  }),
+  mean: z.number(),
+  p90: z.number(),
+  variance: z.number().nonnegative(),
+  bestEpisode: gaEpisodeSummarySchema.optional(),
+  episodes: z.array(gaEpisodeSummarySchema).min(1),
+  samples: z.array(gaSampleSummarySchema).max(10).optional(),
+  timestamp: z.number().int().min(0),
+});
+
+export const gaMonitorJoinSchema = z.object({
+  token: z.string().min(1).optional(),
+});
+
+export const gaUpdateSchema = z.object({
+  token: z.string().min(1).optional(),
+  snapshot: gaSnapshotSchema,
+});
+
+export const gaUpdateRequestSchema = gaUpdateSchema.extend({
+  token: z.string().min(1),
+});
+
+export const gaReplayRequestSchema = z.object({
+  gen: z.number().int().min(0),
+  speed: z.number().min(0.25).max(4).default(1).optional(),
+});
+
+export const gaReplayStartSchema = z.object({
+  gen: z.number().int().min(0),
+  seed: z.string().min(1),
+  weightsHash: z.string().min(1),
+  policyVersion: z.string().min(1),
+  engineVersion: z.string().min(1),
+  totalFrames: z.number().int().min(0),
+  playbackSpeed: z.number().min(0.25).max(4),
+});
+
+export const gaReplayFrameSchema = z.object({
+  gen: z.number().int().min(0),
+  frame: z.number().int().min(0),
+  timestamp: z.number().int().min(0),
+  match: matchStateSchema.nullable(),
+  action: z
+    .object({
+      type: z.string().min(1),
+      payload: z.unknown(),
+    })
+    .optional(),
+});
+
+export const gaReplayEndSchema = z.object({
+  gen: z.number().int().min(0),
+  reason: z.enum(['completed', 'cancelled', 'error']),
+  message: z.string().optional(),
+});
+
 export const requestSchemas = {
   'lobby:create': z.object({
     name: lobbyNameSchema,
@@ -223,6 +311,9 @@ export const requestSchemas = {
   [EVENTS.CARD_PLAY_UNIT]: playUnitCardSchema,
   [EVENTS.CARD_PLAY_SPELL]: playSpellCardSchema,
   [EVENTS.CARD_PLAY_TALENT]: playTalentCardSchema,
+  [EVENTS.GA_MONITOR_JOIN]: gaMonitorJoinSchema,
+  [EVENTS.GA_UPDATE]: gaUpdateRequestSchema,
+  [EVENTS.GA_REPLAY_REQUEST]: gaReplayRequestSchema,
 } satisfies Record<string, z.ZodTypeAny>;
 
 export const schemas = {
@@ -249,6 +340,12 @@ export const schemas = {
   [EVENTS.CARD_PLAY_UNIT]: playUnitCardSchema,
   [EVENTS.CARD_PLAY_SPELL]: playSpellCardSchema,
   [EVENTS.CARD_PLAY_TALENT]: playTalentCardSchema,
+  [EVENTS.GA_MONITOR_JOIN]: gaMonitorJoinSchema,
+  [EVENTS.GA_UPDATE]: gaUpdateSchema,
+  [EVENTS.GA_REPLAY_REQUEST]: gaReplayRequestSchema,
+  [EVENTS.GA_REPLAY_START]: gaReplayStartSchema,
+  [EVENTS.GA_REPLAY_FRAME]: gaReplayFrameSchema,
+  [EVENTS.GA_REPLAY_END]: gaReplayEndSchema,
 } satisfies Record<string, z.ZodTypeAny>;
 
 export type Lobby = z.infer<typeof lobbySchema>;
@@ -269,6 +366,16 @@ export type Card_Talent = z.infer<typeof cardTalentSchema>;
 export type SpellEffect = z.infer<typeof spellEffectSchema>;
 export type AreaShape = z.infer<typeof areaShapeSchema>;
 export type DeckState = z.infer<typeof deckStateSchema>;
+export type GaEpisodeSummary = z.infer<typeof gaEpisodeSummarySchema>;
+export type GaSampleSummary = z.infer<typeof gaSampleSummarySchema>;
+export type GaSnapshot = z.infer<typeof gaSnapshotSchema>;
+export type GaUpdatePayload = z.infer<typeof gaUpdateSchema>;
+export type GaUpdateRequestPayload = z.infer<typeof gaUpdateRequestSchema>;
+export type GaMonitorJoinPayload = z.infer<typeof gaMonitorJoinSchema>;
+export type GaReplayRequestPayload = z.infer<typeof gaReplayRequestSchema>;
+export type GaReplayStartPayload = z.infer<typeof gaReplayStartSchema>;
+export type GaReplayFramePayload = z.infer<typeof gaReplayFrameSchema>;
+export type GaReplayEndPayload = z.infer<typeof gaReplayEndSchema>;
 
 export const turnStateSchema = z.object({
   lobbyId: lobbyIdSchema,

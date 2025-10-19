@@ -19,6 +19,12 @@ export const EVENTS = {
   CARD_PLAY_TALENT: 'card:playTalent',
   GAME_MOVE_UNIT: 'game:moveUnit',
   GAME_END_TURN: 'game:endTurn',
+  GA_MONITOR_JOIN: 'ga:monitor:join',
+  GA_UPDATE: 'ga:update',
+  GA_REPLAY_REQUEST: 'ga:replay:request',
+  GA_REPLAY_START: 'ga:replay:start',
+  GA_REPLAY_FRAME: 'ga:replay:frame',
+  GA_REPLAY_END: 'ga:replay:end',
 } as const;
 
 export const BOARD_W = 8;

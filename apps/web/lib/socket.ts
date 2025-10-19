@@ -16,6 +16,10 @@ import {
   type PlayUnitCardPayload,
   type PlaySpellCardPayload,
   type PlayTalentCardPayload,
+  type GaUpdatePayload,
+  type GaReplayStartPayload,
+  type GaReplayFramePayload,
+  type GaReplayEndPayload,
 } from '@repo/shared';
 
 const SOCKET_URL = `${process.env.NEXT_PUBLIC_SOCKET_URL ?? 'http://localhost:4000'}/game`;
@@ -98,6 +102,10 @@ export const socketClient = new SocketManager();
 export type LobbyListHandler = (payload: LobbyListPayload) => void;
 export type StateSyncHandler = (payload: StateSync) => void;
 export type ErrorHandler = (payload: ErrorPayload) => void;
+export type GaUpdateHandler = (payload: GaUpdatePayload['snapshot']) => void;
+export type GaReplayStartHandler = (payload: GaReplayStartPayload) => void;
+export type GaReplayFrameHandler = (payload: GaReplayFramePayload) => void;
+export type GaReplayEndHandler = (payload: GaReplayEndPayload) => void;
 
 export function requestLobbyList(page = 1, pageSize = 10) {
   socketClient.emit(EVENTS.LIST, { page, pageSize });
@@ -137,6 +145,30 @@ export function playSpellCard(payload: PlaySpellCardPayload) {
 
 export function playTalentCard(payload: PlayTalentCardPayload) {
   socketClient.emit(EVENTS.CARD_PLAY_TALENT, payload);
+}
+
+export function joinGaMonitor(token?: string) {
+  socketClient.emit(EVENTS.GA_MONITOR_JOIN, { token });
+}
+
+export function requestGaReplay(gen: number, speed?: number) {
+  socketClient.emit(EVENTS.GA_REPLAY_REQUEST, { gen, speed });
+}
+
+export function onGaUpdate(handler: GaUpdateHandler) {
+  return socketClient.on(EVENTS.GA_UPDATE, (payload: GaUpdatePayload) => handler(payload.snapshot));
+}
+
+export function onGaReplayStart(handler: GaReplayStartHandler) {
+  return socketClient.on(EVENTS.GA_REPLAY_START, handler);
+}
+
+export function onGaReplayFrame(handler: GaReplayFrameHandler) {
+  return socketClient.on(EVENTS.GA_REPLAY_FRAME, handler);
+}
+
+export function onGaReplayEnd(handler: GaReplayEndHandler) {
+  return socketClient.on(EVENTS.GA_REPLAY_END, handler);
 }
 
 export type LobbyState = Lobby;
