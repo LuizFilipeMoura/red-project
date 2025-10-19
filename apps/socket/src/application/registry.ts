@@ -18,6 +18,16 @@ export const registerHandlers = (
 ) => {
   for (const definition of definitions) {
     context.socket.on(definition.event, async (payload: unknown) => {
+      context.logger.debug(
+        {
+          event: definition.event,
+          sid: context.sid,
+          socketId: context.socket.id,
+          hasPayload: !!payload,
+        },
+        'Event received',
+      );
+
       try {
         if (definition.useRateLimit && !context.checkRateLimit(definition.event)) {
           throw new ApplicationError('RATE_LIMIT', 'Too many requests');

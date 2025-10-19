@@ -84,6 +84,7 @@ export class GARunner {
       'Starting GA run',
     );
     let population: PolicyGenome[] = Array.from({ length: env.GA_POPULATION_SIZE }, () => this.seedGenome());
+    let previousChampion: PolicyGenome | undefined = undefined;
 
     for (let generation = 0; generation < env.GA_GENERATIONS; generation += 1) {
       logger.info(
@@ -92,18 +93,54 @@ export class GARunner {
           totalGenerations: env.GA_GENERATIONS,
           populationSize: population.length,
         },
-        `Starting generation ${generation + 1}/${env.GA_GENERATIONS}`,
+        '='.repeat(80),
+      );
+      logger.info(
+        {
+          generation,
+          totalGenerations: env.GA_GENERATIONS,
+          populationSize: population.length,
+        },
+        `🧬 GENERATION ${generation + 1}/${env.GA_GENERATIONS} - Population: ${population.length} individuals`,
       );
 
       // Evaluate population sequentially to avoid overwhelming the server
-      const evaluations: typeof import('../evaluation/evaluator.js').IndividualEvaluation[] = [];
+      const evaluations: IndividualEvaluation[] = [];
       for (let i = 0; i < population.length; i += 1) {
         logger.info(
-          { generation, individualIndex: i + 1, totalIndividuals: population.length },
-          `Evaluating individual ${i + 1}/${population.length}`,
+          {
+            generation,
+            individualIndex: i + 1,
+            totalIndividuals: population.length,
+            hasPreviousChampion: !!previousChampion
+          },
+          '-'.repeat(80),
         );
-        const evaluation = await this.evaluator.evaluate(population[i]!, generation);
+        logger.info(
+          {
+            generation,
+            individualIndex: i + 1,
+            totalIndividuals: population.length,
+            hasPreviousChampion: !!previousChampion,
+            genome: population[i]
+          },
+          previousChampion
+            ? `🎮 Testing Individual ${i + 1}/${population.length} (Gen ${generation + 1}) vs Previous Champion`
+            : `🎮 Testing Individual ${i + 1}/${population.length} (Gen ${generation + 1}) - Self-Play`,
+        );
+        const evaluation = await this.evaluator.evaluate(population[i]!, generation, previousChampion);
         evaluations.push(evaluation);
+
+        logger.info(
+          {
+            generation,
+            individualIndex: i + 1,
+            fitness: evaluation.stats.fitness,
+            winRate: evaluation.stats.winRate,
+            meanScore: evaluation.stats.mean
+          },
+          `✅ Individual ${i + 1}/${population.length} Complete - Fitness: ${evaluation.stats.fitness.toFixed(2)}, Win Rate: ${(evaluation.stats.winRate * 100).toFixed(1)}%`,
+        );
       }
 
       if (evaluations.length === 0) {
@@ -154,6 +191,40 @@ export class GARunner {
 
       await persistGeneration(snapshot);
       await persistEpisodes(best.episodes);
+
+      // Log generation summary
+      logger.info(
+        {
+          generation,
+          bestFitness: best.stats.fitness,
+          meanFitness: mean,
+          bestWinRate: best.stats.winRate,
+          bestGenome: best.genome,
+          bestHash: best.weightsHash
+        },
+        '='.repeat(80),
+      );
+      logger.info(
+        {
+          generation,
+          bestFitness: best.stats.fitness,
+          meanFitness: mean,
+          bestWinRate: best.stats.winRate,
+        },
+        `🏆 GENERATION ${generation + 1} COMPLETE - Best Fitness: ${best.stats.fitness.toFixed(2)}, Mean: ${mean.toFixed(2)}, Win Rate: ${(best.stats.winRate * 100).toFixed(1)}%`,
+      );
+
+      // Update champion for next generation
+      previousChampion = best.genome;
+      logger.info(
+        {
+          generation,
+          championFitness: best.stats.fitness,
+          championGenome: best.genome,
+          championHash: best.weightsHash
+        },
+        `👑 New Champion Set for Generation ${generation + 2} - Fitness: ${best.stats.fitness.toFixed(2)}`,
+      );
       await saveWeights(best.genome, best.weightsHash);
       logger.debug(
         {
@@ -211,8 +282,31 @@ export class GARunner {
       }
 
       population = nextPopulation;
+
+      logger.info(
+        {
+          generation,
+          nextGeneration: generation + 2,
+          newPopulationSize: nextPopulation.length,
+          elitismCount
+        },
+        `📊 Breeding Next Generation - ${nextPopulation.length} individuals created (${elitismCount} elite carried over)`,
+      );
     }
 
-    logger.info('GA run completed');
+    logger.info(
+      {
+        totalGenerations: env.GA_GENERATIONS,
+        finalPopulationSize: population.length
+      },
+      '='.repeat(80),
+    );
+    logger.info(
+      {
+        totalGenerations: env.GA_GENERATIONS,
+        finalPopulationSize: population.length
+      },
+      `🎉 GA RUN COMPLETE - ${env.GA_GENERATIONS} generations finished!`,
+    );
   }
 }

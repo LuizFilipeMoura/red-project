@@ -113,6 +113,16 @@ const broadcastState = async (lobby: LobbyState, action?: { type: string; payloa
 
   // Emit to each player individually with their SID
   const sockets = await gameNs.in(LOBBY_ROOM(lobby.meta.id)).fetchSockets();
+  logger.debug(
+    {
+      lobbyId: lobby.meta.id,
+      room: LOBBY_ROOM(lobby.meta.id),
+      socketCount: sockets.length,
+      socketIds: sockets.map((s) => s.id),
+    },
+    'Broadcasting state to lobby',
+  );
+
   for (const socket of sockets) {
     const sid = socket.data.sid;
     const dto = makeMsg(EVENTS.STATE_SYNC, {
@@ -120,6 +130,15 @@ const broadcastState = async (lobby: LobbyState, action?: { type: string; payloa
       match: matchDto,
       yourSid: sid,
     });
+    logger.debug(
+      {
+        lobbyId: lobby.meta.id,
+        socketId: socket.id,
+        sid,
+        event: EVENTS.STATE_SYNC,
+      },
+      'Emitting STATE_SYNC to socket',
+    );
     socket.emit(EVENTS.STATE_SYNC, dto);
   }
 };
