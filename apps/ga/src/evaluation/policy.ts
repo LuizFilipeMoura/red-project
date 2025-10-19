@@ -8,6 +8,8 @@ import { logger } from '../logger.js';
 export class AIPolicy {
   private rng: () => number;
   private actionCount: number = 0;
+  private lastTurnNumber: number = -1;
+  private actionsTakenThisTurn: number = 0;
 
   constructor(
     private genome: PolicyGenome,
@@ -34,7 +36,14 @@ export class AIPolicy {
       return { type: 'endTurn' };
     }
 
-    const isFirstAction = this.actionCount === 0;
+    // Track turn changes - reset action counter for new turn
+    if (match.turnNumber !== this.lastTurnNumber) {
+      this.lastTurnNumber = match.turnNumber;
+      this.actionsTakenThisTurn = 0;
+    }
+
+    const isFirstActionOfGame = this.actionCount === 0;
+    const isFirstActionOfTurn = this.actionsTakenThisTurn === 0;
 
     const myMana = match.mana[mySid] ?? 0;
     const myDeck = match.decks[mySid];
@@ -73,6 +82,7 @@ export class AIPolicy {
           const spawnPos = this.selectSpawnPosition(match, mySid, mySide);
           if (spawnPos) {
             this.actionCount++;
+            this.actionsTakenThisTurn++;
             logger.debug(
               {
                 genome: this.genome,
@@ -112,6 +122,7 @@ export class AIPolicy {
           const target = this.selectSpellTarget(match, mySid, enemyUnits);
           if (target) {
             this.actionCount++;
+            this.actionsTakenThisTurn++;
             logger.debug(
               {
                 genome: this.genome,
@@ -141,6 +152,7 @@ export class AIPolicy {
         const destination = this.selectMoveDestination(match, unitToMove, mySide, enemySide);
         if (destination) {
           this.actionCount++;
+          this.actionsTakenThisTurn++;
           logger.debug(
             {
               genome: this.genome,
@@ -161,17 +173,18 @@ export class AIPolicy {
       }
     }
 
-    // If this is the first action, we MUST do something other than end turn
-    if (isFirstAction) {
+    // If this is the first action of the turn, we MUST do something other than end turn
+    if (isFirstActionOfTurn) {
       // Force play a card or move a unit
       logger.info(
         {
           genome: this.genome,
           mana: myMana,
           handSize: myDeck?.hand.length ?? 0,
-          unitCount: myUnits.length
+          unitCount: myUnits.length,
+          turnNumber: match.turnNumber
         },
-        'First action of the game - forcing non-endTurn action'
+        `First action of turn ${match.turnNumber} - forcing non-endTurn action`
       );
 
       // Try to play any affordable card
@@ -188,12 +201,14 @@ export class AIPolicy {
             const spawnPos = this.selectSpawnPosition(match, mySid, mySide);
             if (spawnPos) {
               this.actionCount++;
+              this.actionsTakenThisTurn++;
               return { type: 'playUnit', cardId: selectedCard.id, x: spawnPos.x, y: spawnPos.y };
             }
           } else if (selectedCard.card.kind === 'Spell') {
             const target = this.selectSpellTarget(match, mySid, enemyUnits);
             if (target) {
               this.actionCount++;
+              this.actionsTakenThisTurn++;
               return {
                 type: 'playSpell',
                 cardId: selectedCard.id,
@@ -213,6 +228,7 @@ export class AIPolicy {
           const destination = this.selectMoveDestination(match, unitToMove, mySide, enemySide);
           if (destination) {
             this.actionCount++;
+            this.actionsTakenThisTurn++;
             return {
               type: 'moveUnit',
               unitId: unitToMove.id,
@@ -225,7 +241,16 @@ export class AIPolicy {
 
       // If we absolutely can't do anything else, fall through to end turn
       // (this should be rare - only if we have no mana, no cards, and no units)
-      logger.warn({ genome: this.genome }, 'First action but no valid actions available');
+      logger.warn(
+        {
+          genome: this.genome,
+          turnNumber: match.turnNumber,
+          mana: myMana,
+          handSize: myDeck?.hand.length ?? 0,
+          unitCount: myUnits.length
+        },
+        `First action of turn ${match.turnNumber} but no valid actions available - forced to end turn`
+      );
     }
 
     // Default: end turn

@@ -151,7 +151,22 @@ export class Evaluator {
           );
         }
       } catch (error) {
-        logger.error({ err: error, generation, seed, episodeIndex: index + 1 }, 'Failed to play game episode');
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isServerError = errorMessage.includes('Unique constraint') || errorMessage.includes('PrismaClient');
+
+        logger.error(
+          {
+            err: error,
+            generation,
+            seed,
+            episodeIndex: index + 1,
+            errorType: isServerError ? 'SERVER_ERROR' : 'CLIENT_ERROR',
+            errorMessage
+          },
+          isServerError
+            ? '⚠️ Server database error detected - using fallback result'
+            : 'Failed to play game episode - using fallback result'
+        );
         // Fall back to mock result on error
         const rng = seedrandom(seed);
         const win = rng() < 0.5;
@@ -171,6 +186,12 @@ export class Evaluator {
           policyVersion: env.GA_POLICY_VERSION,
           traceRef,
         });
+
+        // Give server time to recover from errors
+        if (isServerError) {
+          logger.info('Waiting 2s for server to recover...');
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
       }
     }
 
