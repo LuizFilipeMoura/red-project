@@ -68,7 +68,7 @@ export const SIDE_ROWS = {
   B: { min: 4, max: 7 },
 } as const;
 
-export const BOARD_SIDES: Readonly<Record<'A' | 'B', typeof SIDE_ROWS.A>> = SIDE_ROWS;
+export const BOARD_SIDES = SIDE_ROWS;
 
 export const isOwnSide = (side: 'A' | 'B', y: number) => {
   const rows = SIDE_ROWS[side];
