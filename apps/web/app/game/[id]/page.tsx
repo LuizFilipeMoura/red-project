@@ -56,7 +56,7 @@ type Highlight = { x: number; y: number; color: number };
 type TileCoords = { x: number; y: number };
 
 type SceneApi = PhaserType.Scene & {
-  renderMatch: (match: MatchState | null) => void;
+  renderMatch: (match: MatchState | null, currentUserSid?: string | null) => void;
   setHighlights: (cells: Highlight[]) => void;
 };
 
@@ -371,7 +371,7 @@ export default function GamePage() {
           this.unitTexts.clear();
         }
 
-        renderMatch(matchState: MatchState | null) {
+        renderMatch(matchState: MatchState | null, currentUserSid: string | null = null) {
           this.clearUnits();
           if (!matchState) {
             this.updateFlagMarkers(DEFAULT_BOARD);
@@ -380,13 +380,21 @@ export default function GamePage() {
           this.updateFlagMarkers(matchState.board);
           for (const unit of matchState.units) {
             const center = this.tileCenter(unit.x, unit.y);
+            const textColor =
+              currentUserSid !== null
+                ? unit.owner === currentUserSid
+                  ? '#38bdf8'
+                  : '#f87171'
+                : unit.owner === matchState.currentPlayerSid
+                  ? '#f8fafc'
+                  : '#cbd5f5';
             const text = this.add
               .text(
                 center.x,
                 center.y,
                 `${unit.type}\n${unit.hp}/${unit.hpMax}`,
                 {
-                  color: unit.owner === matchState.currentPlayerSid ? '#f8fafc' : '#cbd5f5',
+                  color: textColor,
                   fontSize: '12px',
                   fontFamily: 'monospace',
                   align: 'center',
@@ -452,7 +460,7 @@ export default function GamePage() {
         hoverHandlerRef.current(coords);
       });
       if (match) {
-        scene.renderMatch(match);
+        scene.renderMatch(match, currentUserSid);
       }
     };
     mount();
@@ -471,9 +479,9 @@ export default function GamePage() {
 
   useEffect(() => {
     if (sceneRef.current) {
-      sceneRef.current.renderMatch(match);
+      sceneRef.current.renderMatch(match, currentUserSid);
     }
-  }, [match]);
+  }, [match, currentUserSid]);
 
   const yourHandCards = useMemo(() => {
     if (!match || !currentUserSid) return [] as Array<{ cardId: string; card: Card_Unit | Card_Spell }>;
