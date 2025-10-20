@@ -3,7 +3,7 @@ import type { Card_Spell } from '@repo/shared';
 import type { z } from 'zod';
 import { ApplicationError } from '../../errors.js';
 import type { EventHandler, HandlerContext } from '../../types.js';
-import { isOnBoard } from '../../../game/rules.js';
+import { isOnBoard, syncFlagControlPresence } from '../../../game/rules.js';
 import {
   applySpellCard,
   findCardInHand,
@@ -112,6 +112,8 @@ export const handlePlaySpell: EventHandler<PlaySpellInput> = async (context, inp
         where: { id: { in: result.removedUnits } },
       });
     }
+
+    syncFlagControlPresence(lobby, match);
 
     await context.broadcastState(lobby, {
       type: EVENTS.CARD_PLAY_SPELL,

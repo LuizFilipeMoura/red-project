@@ -140,6 +140,7 @@ export const matchStateSchema = z.object({
   decks: z.record(sidSchema, deckStateSchema),
   cards: z.record(z.string(), cardSchema),
   talentsInHand: z.record(sidSchema, z.array(z.string())),
+  flagControlTurns: z.record(sidSchema, z.number().int().min(0)).default({}),
   winnerSid: sidSchema.optional().nullable(),
 });
 

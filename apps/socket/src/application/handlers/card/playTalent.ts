@@ -3,7 +3,7 @@ import type { Card_Talent } from '@repo/shared';
 import type { z } from 'zod';
 import { ApplicationError } from '../../errors.js';
 import type { EventHandler, HandlerContext } from '../../types.js';
-import { isOnBoard } from '../../../game/rules.js';
+import { isOnBoard, syncFlagControlPresence } from '../../../game/rules.js';
 import { removeTalentsForUnit, removeTalentCard, spendMana } from '../../../game/cards.js';
 import type { LobbyState } from '../../../state.js';
 
@@ -141,6 +141,8 @@ export const handlePlayTalent: EventHandler<PlayTalentInput> = async (context, i
       removeTalentsForUnit(match, targetUnit.id);
       await context.db.unit.deleteMany({ where: { id: targetUnit.id } });
     }
+
+    syncFlagControlPresence(lobby, match);
 
     removeTalentCard(match, context.sid, card.id);
 

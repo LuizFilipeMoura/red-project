@@ -201,6 +201,7 @@ const withDefaultBoard = (match: MatchState | null, lobbyId: string): MatchState
     decks: match.decks ?? {},
     cards: match.cards ?? {},
     talentsInHand: match.talentsInHand ?? {},
+    flagControlTurns: match.flagControlTurns ?? {},
     winnerSid: match.winnerSid ?? null,
   };
 };
@@ -242,6 +243,7 @@ export const loadMatchState = async (db: PrismaClient, lobby: LobbyState) => {
   baseMatch.decks = parsedDecks;
   baseMatch.cards = parsedCards;
   baseMatch.talentsInHand = parsedTalents;
+  baseMatch.flagControlTurns = parsed.match?.flagControlTurns ?? baseMatch.flagControlTurns ?? {};
 
   baseMatch.units = unitRows.map((unit) => ({
     id: unit.id,
@@ -313,5 +315,6 @@ export const initializeMatchState = (
   decks: {},
   cards: {},
   talentsInHand: { [playerOrder[0]]: [], [playerOrder[1]]: [] },
+  flagControlTurns: { [playerOrder[0]]: 0, [playerOrder[1]]: 0 },
   winnerSid: null,
 });

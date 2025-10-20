@@ -26,6 +26,7 @@ export const BOARD_H = 8;
 export const FLAG_A = { x: 0, y: 0 } as const;
 export const FLAG_B = { x: BOARD_W - 1, y: BOARD_H - 1 } as const;
 export const MANA_PER_TURN = 5;
+export const FLAG_TURNS_TO_WIN = 3;
 
 export const CARD_KINDS = ['Unit', 'Spell', 'Talent'] as const;
 export type CardKind = (typeof CARD_KINDS)[number];
