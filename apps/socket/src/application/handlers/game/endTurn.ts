@@ -2,7 +2,7 @@ import { EVENTS, schemas } from '@repo/shared';
 import type { z } from 'zod';
 import type { EventHandler, HandlerContext } from '../../types.js';
 import { ApplicationError } from '../../errors.js';
-import { getPlayerOrder } from '../../../game/rules.js';
+import { advanceFlagControlCounters, getPlayerOrder } from '../../../game/rules.js';
 import { expireTalents, startTurnForPlayer } from '../../../game/cards.js';
 import type { LobbyState } from '../../../state.js';
 
@@ -82,12 +82,18 @@ export const handleEndTurn: EventHandler<EndTurnInput> = async (context, input) 
   try {
     match.mana[current] = 0;
     expireTalents(match, current);
-    match.turnNumber += 1;
-    match.currentPlayerSid = nextPlayer;
-    lobby.currentPlayerSid = nextPlayer;
-    lobby.turnNumber = match.turnNumber;
+    const winnerSid = advanceFlagControlCounters(lobby, match);
+    if (winnerSid) {
+      match.winnerSid = winnerSid;
+      lobby.meta.status = 'finished';
+    } else {
+      match.turnNumber += 1;
+      match.currentPlayerSid = nextPlayer;
+      lobby.currentPlayerSid = nextPlayer;
+      lobby.turnNumber = match.turnNumber;
 
-    startTurnForPlayer(match, nextPlayer);
+      startTurnForPlayer(match, nextPlayer);
+    }
 
     await context.broadcastState(lobby, { type: EVENTS.GAME_END_TURN, payload: input });
   } finally {

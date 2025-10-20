@@ -22,6 +22,7 @@ import {
   EVENTS,
   FLAG_A,
   FLAG_B,
+  FLAG_TURNS_TO_WIN,
   MANA_PER_TURN,
   MOVE_RANGE,
 } from '@repo/shared';
@@ -162,6 +163,26 @@ export default function GamePage() {
 
   const isMyTurn = match && currentUserSid && match.currentPlayerSid === currentUserSid;
   const isGameActive = match && !match.winnerSid;
+
+  const playerOrder = useMemo(() => {
+    if (!lobby || lobby.players.length < 2) return [] as Array<{ sid: string; label: string }>;
+    const sorted = [...lobby.players].sort(
+      (a, b) => new Date(a.joinedAt).valueOf() - new Date(b.joinedAt).valueOf(),
+    );
+    return sorted.map((player, index) => ({
+      sid: player.sid,
+      label: index === 0 ? 'Player A' : 'Player B',
+    }));
+  }, [lobby]);
+
+  const flagHoldSummaries = useMemo(
+    () =>
+      playerOrder.map((player) => ({
+        ...player,
+        turns: match?.flagControlTurns?.[player.sid] ?? 0,
+      })),
+    [playerOrder, match],
+  );
 
   useEffect(() => {
     const lobbyId = params?.id;
@@ -563,6 +584,27 @@ export default function GamePage() {
             {match?.currentPlayerSid ? match.currentPlayerSid.slice(0, 8) : 'TBD'}
             {isMyTurn && <span className="ml-2 text-emerald-400 font-semibold">(Your turn!)</span>}
           </p>
+        )}
+        {flagHoldSummaries.length === 2 && (
+          <div className="text-xs">
+            <p className="font-semibold uppercase tracking-wide text-muted-foreground">
+              Flag Hold Progress
+            </p>
+            <div className="mt-1 flex flex-wrap gap-3 text-sm text-muted-foreground">
+              {flagHoldSummaries.map((entry) => (
+                <span
+                  key={entry.sid}
+                  className="flex items-center gap-2 rounded-lg bg-slate-900/60 px-3 py-1"
+                >
+                  <span className="font-semibold text-foreground">{entry.label}</span>
+                  <span>
+                    {entry.turns}/{FLAG_TURNS_TO_WIN} turns
+                  </span>
+                  <span className="text-[10px] text-muted-foreground/80">({entry.sid.slice(0, 6)})</span>
+                </span>
+              ))}
+            </div>
+          </div>
         )}
         {match?.winnerSid && (
           <p className="text-sm font-semibold text-emerald-400">

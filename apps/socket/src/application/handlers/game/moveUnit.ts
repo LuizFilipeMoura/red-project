@@ -7,10 +7,9 @@ import {
   isCellOccupied,
   isOnBoard,
   manhattanDistance,
-  getFlagCaptureWinner,
+  syncFlagControlPresence,
 } from '../../../game/rules.js';
 import type { LobbyState } from '../../../state.js';
-import { removeTalentsForUnit } from '../../../game/cards.js';
 
 const schema = schemas[EVENTS.GAME_MOVE_UNIT];
 
@@ -123,12 +122,7 @@ export const handleMoveUnit: EventHandler<MoveUnitInput> = async (context, input
       },
     });
 
-    const winnerSid = getFlagCaptureWinner(lobby, match);
-    if (winnerSid) {
-      match.winnerSid = winnerSid;
-      lobby.meta.status = 'finished';
-      removeTalentsForUnit(match, unit.id);
-    }
+    syncFlagControlPresence(lobby, match);
 
     await context.broadcastState(lobby, { type: EVENTS.GAME_MOVE_UNIT, payload: input });
   } finally {

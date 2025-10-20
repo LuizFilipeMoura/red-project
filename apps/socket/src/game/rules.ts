@@ -1,4 +1,13 @@
-import { SIDE_ROWS, BOARD_W, BOARD_H, UNIT_COST, MOVE_RANGE, FLAG_A, FLAG_B } from '@repo/shared';
+import {
+  SIDE_ROWS,
+  BOARD_W,
+  BOARD_H,
+  UNIT_COST,
+  MOVE_RANGE,
+  FLAG_A,
+  FLAG_B,
+  FLAG_TURNS_TO_WIN,
+} from '@repo/shared';
 import type { LobbyState } from '../state.js';
 import type { MatchState } from '@repo/shared';
 
@@ -34,20 +43,57 @@ export const getMoveRange = (type: keyof typeof MOVE_RANGE) => MOVE_RANGE[type];
 export const isFlagCell = (x: number, y: number) =>
   (x === FLAG_A.x && y === FLAG_A.y) || (x === FLAG_B.x && y === FLAG_B.y);
 
-export const getFlagCaptureWinner = (lobby: LobbyState, match: MatchState): string | null => {
+const ensureFlagControlTurns = (match: MatchState, players: string[]) => {
+  if (!match.flagControlTurns) {
+    match.flagControlTurns = {};
+  }
+  for (const sid of players) {
+    if (match.flagControlTurns[sid] === undefined) {
+      match.flagControlTurns[sid] = 0;
+    }
+  }
+};
+
+const getUnitOnFlag = (match: MatchState, flag: { x: number; y: number }) =>
+  match.units.find((unit) => unit.x === flag.x && unit.y === flag.y);
+
+export const syncFlagControlPresence = (lobby: LobbyState, match: MatchState) => {
+  const order = getPlayerOrder(lobby);
+  if (!order) return;
+  const [playerA, playerB] = order;
+  ensureFlagControlTurns(match, order);
+
+  const unitOnFlagA = getUnitOnFlag(match, FLAG_A);
+  if (!unitOnFlagA || unitOnFlagA.owner !== playerB) {
+    match.flagControlTurns[playerB] = 0;
+  }
+
+  const unitOnFlagB = getUnitOnFlag(match, FLAG_B);
+  if (!unitOnFlagB || unitOnFlagB.owner !== playerA) {
+    match.flagControlTurns[playerA] = 0;
+  }
+};
+
+export const advanceFlagControlCounters = (lobby: LobbyState, match: MatchState): string | null => {
   const order = getPlayerOrder(lobby);
   if (!order) return null;
   const [playerA, playerB] = order;
+  ensureFlagControlTurns(match, order);
 
-  const unitOnFlagA = match.units.find((unit) => unit.x === FLAG_A.x && unit.y === FLAG_A.y);
-  if (unitOnFlagA && unitOnFlagA.owner !== playerA) {
-    return unitOnFlagA.owner;
+  const unitOnFlagA = getUnitOnFlag(match, FLAG_A);
+  const unitOnFlagB = getUnitOnFlag(match, FLAG_B);
+
+  const playerAHolding = !!unitOnFlagB && unitOnFlagB.owner === playerA;
+  const playerBHolding = !!unitOnFlagA && unitOnFlagA.owner === playerB;
+
+  match.flagControlTurns[playerA] = playerAHolding ? match.flagControlTurns[playerA] + 1 : 0;
+  match.flagControlTurns[playerB] = playerBHolding ? match.flagControlTurns[playerB] + 1 : 0;
+
+  if (playerAHolding && match.flagControlTurns[playerA] >= FLAG_TURNS_TO_WIN) {
+    return playerA;
   }
-
-  const unitOnFlagB = match.units.find((unit) => unit.x === FLAG_B.x && unit.y === FLAG_B.y);
-  if (unitOnFlagB && unitOnFlagB.owner !== playerB) {
-    return unitOnFlagB.owner;
+  if (playerBHolding && match.flagControlTurns[playerB] >= FLAG_TURNS_TO_WIN) {
+    return playerB;
   }
-
   return null;
 };
